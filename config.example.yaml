@@ -47,6 +47,7 @@ translate:
   top_p: 0.9
   max_retries: 3
   request_timeout: 180
+  think: false                           # 关闭 qwen3 思考（ollama≥0.9）；老版本报错改为 null
   # 单集总时长预算（分钟），超时中止并记失败
   per_item_budget_min: 60
 

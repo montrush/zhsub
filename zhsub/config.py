@@ -37,6 +37,7 @@ DEFAULTS = {
         "max_retries": 3,
         "request_timeout": 180,
         "per_item_budget_min": 60,
+        "think": False,   # qwen3 关闭思考（实测 3.88 ollama 支持）；老版 ollama 报错就改回 null
     },
     "schedule": {
         "window": ["01:00", "07:00"],

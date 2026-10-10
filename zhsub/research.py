@@ -150,7 +150,7 @@ class Researcher:
             num_ctx=int(r.get("num_ctx", 8192)),
             temperature=t.get("temperature", 0.2), top_p=t.get("top_p", 0.9),
             request_timeout=t.get("request_timeout", 180),
-            max_retries=t.get("max_retries", 3),
+            max_retries=t.get("max_retries", 3), think=t.get("think"),
         )
 
     def collect(self, series: str, tmdb_id=None, force: bool = False):

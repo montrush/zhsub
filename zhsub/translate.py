@@ -49,7 +49,8 @@ class BudgetExceeded(RuntimeError):
 class Ollama:
     def __init__(self, base_url: str, model: str, num_ctx: int = 4096,
                  temperature: float = 0.2, top_p: float = 0.9,
-                 request_timeout: int = 180, max_retries: int = 3):
+                 request_timeout: int = 180, max_retries: int = 3,
+                 think: bool = None):
         self.base = base_url.rstrip("/")
         self.model = model
         self.num_ctx = num_ctx
@@ -57,6 +58,7 @@ class Ollama:
         self.top_p = top_p
         self.timeout = request_timeout
         self.max_retries = max_retries
+        self.think = think  # None=跟随模型默认；False=关闭 qwen3 思考（ollama ≥0.9）
 
     def chat(self, system: str, user: str) -> str:
         return self.chat_messages([
@@ -76,6 +78,8 @@ class Ollama:
                 "top_p": self.top_p,
             },
         }
+        if self.think is not None:
+            payload["think"] = self.think
         last_err = None
         for attempt in range(self.max_retries + 1):
             try:

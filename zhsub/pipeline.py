@@ -21,7 +21,7 @@ class Pipeline:
             base_url=t["base_url"], model=t["model"], num_ctx=t.get("num_ctx", 4096),
             temperature=t.get("temperature", 0.2), top_p=t.get("top_p", 0.9),
             request_timeout=t.get("request_timeout", 180),
-            max_retries=t.get("max_retries", 3),
+            max_retries=t.get("max_retries", 3), think=t.get("think"),
         )
         return SubTranslator(ai, glossary=terms, batch_size=t.get("batch_size", 10),
                              context_window=t.get("context_window", 2), log=self.log,
