@@ -4,11 +4,7 @@ import os
 import time
 
 from . import extract, glossary, paths, probe, srtio, store
-from .translate import Ollama, SubTranslator
-
-
-class BudgetExceeded(RuntimeError):
-    pass
+from .translate import BudgetExceeded, Ollama, SubTranslator
 
 
 class Pipeline:
@@ -18,7 +14,7 @@ class Pipeline:
         self.store = store.Store(cfg["paths"]["data_dir"])
 
     # ---- helpers -------------------------------------------------------
-    def _translator(self, series: str, tmdb_id=None) -> SubTranslator:
+    def _translator(self, series: str, tmdb_id=None, deadline: float = None) -> SubTranslator:
         t = self.cfg["translate"]
         terms = glossary.load_glossary(self.cfg["paths"]["glossary_dir"], series, tmdb_id)
         ai = Ollama(
@@ -28,7 +24,8 @@ class Pipeline:
             max_retries=t.get("max_retries", 3),
         )
         return SubTranslator(ai, glossary=terms, batch_size=t.get("batch_size", 10),
-                             context_window=t.get("context_window", 2), log=self.log)
+                             context_window=t.get("context_window", 2), log=self.log,
+                             deadline=deadline)
 
     def _media_mtime(self, local_path: str, media: str) -> float:
         for p in (media, local_path):
@@ -122,7 +119,8 @@ class Pipeline:
                 with open(src_srt, "r", encoding="utf-8", errors="replace") as f:
                     cues = srtio.parse_srt(f.read())
                 work = [(c, c.as_line()) for c in cues if c.as_line()]
-                translator = self._translator(series, item.get("tmdb_id"))
+                translator = self._translator(series, item.get("tmdb_id"),
+                                              deadline=deadline)
                 lines = [w[1] for w in work]
 
                 def guard(done_n, total_n):

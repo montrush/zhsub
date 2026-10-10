@@ -16,7 +16,8 @@ SYSTEM_PROMPT = """您是一位专业字幕翻译专家，请严格遵循以下�
 2. 使用自然的口语化表达，符合中文观影习惯
 3. 结合上下文语境，人物称谓、专业术语、情感语气在上下文中保持连贯
 4. 输入为带编号的字幕行（格式：编号|文本）。输出必须逐行对应：保持相同编号，每行输出一条译文，不要合并或拆分
-5. 输出内容必须仅包括译文。不要输出任何开场白，解释说明或总结"""
+5. 输出内容必须仅包括译文。不要输出任何开场白，解释说明或总结
+/no_think"""
 
 REPLY_RE = re.compile(r"^\s*(\d+)\s*[|｜:：]\s?(.*)$")
 
@@ -39,6 +40,10 @@ def _format_context(before, after) -> str:
     if after:
         parts.append("（下文）\n" + "\n".join(after))
     return "\n".join(parts)
+
+
+class BudgetExceeded(RuntimeError):
+    pass
 
 
 class Ollama:
@@ -103,12 +108,14 @@ def parse_numbered_reply(reply: str, n: int):
 
 class SubTranslator:
     def __init__(self, ollama: Ollama, glossary: dict = None,
-                 batch_size: int = 10, context_window: int = 2, log=print):
+                 batch_size: int = 10, context_window: int = 2, log=print,
+                 deadline: float = None):
         self.ai = ollama
         self.system = build_system_prompt(glossary)
         self.batch_size = max(1, batch_size)
         self.ctx_win = max(0, context_window)
         self.log = log
+        self.deadline = deadline  # 单集预算（time.time() 时刻），单行降级时也检查
         self.stats = {"total": 0, "batch_ok": 0, "batch_fail": 0, "single_fallback": 0}
 
     def _chat_once(self, content: str) -> str:
@@ -135,6 +142,8 @@ class SubTranslator:
         return len(aligned) == n
 
     def _single(self, line: str) -> str:
+        if self.deadline and time.time() > self.deadline:
+            raise BudgetExceeded(f"超过单集预算（单行降级阶段）")
         self.stats["single_fallback"] += 1
         reply = self._chat_once(f"请翻译：\n1|{line}")
         aligned = parse_numbered_reply(reply, 1)
