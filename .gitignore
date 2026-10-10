@@ -1,0 +1,19 @@
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+.venv/
+venv/
+
+# 真实配置与运行数据不入库
+config.yaml
+config/config.yaml
+config.local.yaml
+config/*.local.yaml
+data/
+*.log
+
+.pytest_cache/
+.idea/
+.vscode/

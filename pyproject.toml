@@ -1,0 +1,31 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "zhsub"
+version = "0.1.0"
+description = "给家庭媒体库自动补齐中文字幕的无头服务 / Fill missing Chinese subtitles for your home media library (Emby scan + embedded extract + local LLM translate)"
+readme = "README.md"
+requires-python = ">=3.9"
+license = { text = "MIT" }
+authors = [{ name = "montrush" }]
+keywords = ["subtitle", "emby", "jellyfin", "strm", "ollama", "chinese", "translation"]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "License :: OSI Approved :: MIT License",
+    "Topic :: Multimedia :: Video",
+]
+dependencies = [
+    "requests>=2.25",
+    "PyYAML>=5.4",
+]
+
+[project.optional-dependencies]
+dev = ["pytest"]
+
+[project.scripts]
+zhsub = "zhsub.__main__:main"
+
+[tool.setuptools]
+packages = ["zhsub"]

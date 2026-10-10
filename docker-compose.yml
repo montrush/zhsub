@@ -1,0 +1,19 @@
+# zhsub 部署示例（Unraid：与本容器同宿主时挂载为本地路径；跨机器用 NFS/SMB，注意 UID 映射）
+services:
+  zhsub:
+    build: .
+    image: zhsub:latest
+    container_name: zhsub
+    restart: unless-stopped
+    # strm 树历史上是 root 属主（MP/旧管线以 root 写入），故默认 root 运行；
+    # 若你的媒体树归 UID 1000，请改成 "1000:1000"
+    user: "0:0"
+    volumes:
+      - /mnt/user/Movie/MP_Media:/media/strm          # 本地 strm 树（读写：产物 .zh.ai.srt 写这里）
+      - /mnt/user/Movie/cloud115:/media/cloud115:ro   # 115 本地镜像（只读！云端写入一律走 CD2/MP）
+      - /mnt/user/Movie/emby-mv:/media/emby-mv:ro     # 本地真实文件电影库（没有可删）
+      - ./config:/config
+      - ./data:/config/data
+    logging:
+      driver: json-file
+      options: { max-size: "10m", max-file: "3" }

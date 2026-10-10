@@ -1,0 +1,98 @@
+# zhsub
+
+**zhsub** = **zh**(中文) + **sub**(字幕)：给家庭媒体库自动补齐中文字幕的无头（headless）服务。
+
+> Scan your media library for videos missing Chinese subtitles, extract embedded
+> tracks when available, otherwise translate existing subtitles with a local LLM,
+> and drop `.zh.ai.srt` next to your media/strm files. Emby/Jellyfin picks them up
+> as regular external subtitles — no plugin, no cloud, no risk.
+
+它解决一个问题：**库里的视频没有中文字幕时，自动补上。**
+
+```
+┌─────────┐  缺中字清单   ┌──────────────────────────────────────┐
+│  Emby   │ ───────────▶ │ zhsub (Docker, 常驻)                  │
+│ 媒体库  │              │                                      │
+└─────────┘              │  ① 内嵌中字轨 → 直接抽取 (ffmpeg)      │
+                         │  ② 内嵌英字轨 → 本地 LLM 翻译 (ollama) │
+┌─────────┐  媒体文件     │  ③ 无文本轨(如PGS) → ASR（规划中）      │
+│ 本地镜像 │ ◀─────────── │                                      │
+│ /strm树 │              │  产物: xxx.zh.ai.srt / xxx.chi.srt    │
+└─────────┘              └──────────────────────────────────────┘
+```
+
+## 特性
+
+- **媒体库感知**：通过 Emby API 扫描指定媒体库，精确列出「哪些视频缺中文字幕」（按库、按剧统计），也可纯文件系统扫描（不依赖 Emby）。
+- **三级处理链**：内嵌中文字幕直接抽取（带"空壳轨"校验）→ 内嵌英文字幕走本地大模型翻译 → 无文本轨留给 ASR（二期）。
+- **翻译质量保障**：批次翻译 + 行号对齐 + 单行降级；上下文窗口保持人名/语气连贯；每剧译名表（glossary）注入；指数退避重试。
+- **为 strm 库设计**：识别 `.strm` 内容路径并映射到本地镜像，产物写在 strm 树里，Emby 直接捡取，**全程不触碰网盘云端**。
+- **夜窗调度**：只在配置的时段（默认 01:00–07:00）干活，避免与白天观影抢带宽/IO。
+- **无头运行**：单个容器，SQLite 记账，断点续跑；WebUI 在 Roadmap 里。
+
+## 快速开始
+
+```bash
+git clone https://github.com/montrush/zhsub.git
+cd zhsub
+cp config.example.yaml config/config.yaml   # 按注释填你的 Emby 地址/key、ollama 地址
+mkdir -p config data
+docker compose up -d
+docker compose logs -f                      # 看夜窗干活
+```
+
+先手动跑一次全库扫描看结果（不用等夜窗）：
+
+```bash
+docker compose exec zhsub zhsub scan          # 扫描 Emby，输出缺中字清单+统计
+docker compose exec zhsub zhsub run --limit 3 # 试处理 3 个（加 --dry-run 只看不做）
+```
+
+也可以不用 Docker：
+
+```bash
+pip install .                 # 需要 ffmpeg 在 PATH 中
+zhsub scan --config myconfig.yaml
+```
+
+## 配置
+
+见 [`config.example.yaml`](config.example.yaml)，要点：
+
+| 配置 | 说明 |
+|---|---|
+| `emby.*` | Emby 地址、API key、要扫描的媒体库（名称或 ItemId） |
+| `paths.strm_roots` | 本地 strm/媒体树（容器内读写） |
+| `paths.path_map` | strm 文件内容路径 → 本地镜像路径的前缀映射 |
+| `paths.emby_path_map` | Emby 条目 Path → 本地路径的前缀映射 |
+| `translate.*` | ollama 地址、模型名、批大小、上下文窗口 |
+| `schedule.window` | 夜窗时段；`batch` 每批处理数；`stuck_min` 单集超时兜底 |
+| `paths.glossary_dir` | 译名表目录：`<剧名>.json`（`{"术语":"译名"}`）或 `_default.json` |
+
+### 字幕产物命名
+
+| 来源 | 产物 | Emby 显示 |
+|---|---|---|
+| 内嵌中字轨抽取 | `视频名.default.chi.zh-cn.srt` | 中文（默认） |
+| LLM 翻译 | `视频名.zh.ai.srt` | 中文（AI） |
+
+两个名字都是历史延续，方便从旧管线无迁移过渡。
+
+## 与 MoviePilot AutoSubv2 插件的关系
+
+zhsub 是该插件的**独立重写**：把"住在 MP 插件框架里"的抽取/翻译逻辑搬进独立容器，
+从此不再有补丁自愈、marketplace payload 重放覆盖、settle 期 reload 杀任务等问题。
+翻译 prompt、批翻译/对齐/降级策略、空壳轨校验、夜窗/批次/卡死兜底参数均原样平移自
+实战验证过的旧管线（driver v5 + patches v3）。迁移路径：zhsub 跑稳后停用旧插件即可，
+Emby 侧零改动。
+
+## Roadmap
+
+- [ ] WebUI（FastAPI 单页：队列/历史/进度、每剧译名表编辑、失败重试）
+- [ ] ASR 兜底（PGS 图形轨/无字幕轨，对接 faster-whisper 通路）
+- [ ] MoviePilot 联动：入库 webhook 即时处理新集（现在靠定时扫描）
+- [ ] 翻译模型/端点多路配置
+
+## License
+
+[MIT](LICENSE)

@@ -1,0 +1,61 @@
+# zhsub 配置示例 —— 复制为 config.yaml 后按需修改
+
+emby:
+  base_url: http://192.168.1.10:8096      # Emby 地址
+  api_key: YOUR_EMBY_API_KEY              # Emby 控制台 → 高级 → API 密钥
+  # 要扫描的媒体库：填名称或 ItemId（合集/boxsets 类型库会与成员库重复，默认别加）
+  libraries:
+    - 电视115
+    - 动漫115
+    - 电影
+    - 动漫剧场版电影
+  item_types: [Episode, Movie]            # 扫描的条目类型
+  timeout: 30
+
+paths:
+  # 本地 strm/媒体树（zhsub 在这里找文件、写产物）
+  strm_roots:
+    - /media/strm
+  # strm 文件内容（一行路径）→ 本地镜像路径 的前缀映射
+  # 例：strm 内容 "/data/cloud115/115/MP_Media/...mkv" → /media/cloud115/115/MP_Media/...mkv
+  path_map:
+    - { from: /data/cloud115, to: /media/cloud115 }
+  # Emby 条目的 Path 字段（Emby 容器视角）→ zhsub 视角 的前缀映射
+  emby_path_map:
+    - { from: /data/MP_Media, to: /media/strm }
+    - { from: /data/cloud115, to: /media/cloud115 }
+    - { from: /data/emby-mv, to: /media/emby-mv }
+  data_dir: /config/data                  # 扫描结果 / sqlite 记账
+  glossary_dir: /config/glossary          # 每剧译名表: <剧名>.json，格式 {"术语": "译名"}
+
+detect:
+  # 兄弟文件判定「已有中字」的文件名标记（大小写不敏感）：视频名<标记>.srt/.ass...
+  zh_markers: [zh, chi, chs, cht, zho, ".cn."]
+  # 抽取内嵌中字轨后小于该字节数视为“空壳轨”，换下一候选轨/降级到翻译
+  min_extract_bytes: 2000
+  # 跳过这些系列（不补中字），填系列名/目录名精确匹配
+  exclude_series: []
+
+translate:
+  provider: ollama
+  base_url: http://192.168.1.20:11434     # ollama 地址
+  model: qwen3-8b-translate
+  num_ctx: 4096                           # 限制 KV 上下文，防 ollama 默认大分配挤占显存
+  batch_size: 10                          # 批翻译行数；对不齐自动降级单行
+  context_window: 2                       # 每批附带的上下文原文行数（前后各 N 行）
+  temperature: 0.2
+  top_p: 0.9
+  max_retries: 3
+  request_timeout: 180
+  # 单集总时长预算（分钟），超时中止并记失败
+  per_item_budget_min: 60
+
+schedule:
+  window: ["01:00", "07:00"]              # 夜窗；worker 只在窗内干活
+  last_fire: "06:00"                      # 晚于该时刻不再开新集（做完手头为止）
+  scan_interval_min: 5
+  rescanned_hours: 24                     # 候选清单最长复用时长，超时自动重扫
+
+asr:
+  enabled: false                          # 二期：PGS/无文本轨的兜底通路
+  endpoint: ""
