@@ -21,4 +21,5 @@ VOLUME ["/config", "/media/strm", "/media/cloud115"]
 EXPOSE 8085
 
 ENTRYPOINT ["zhsub"]
-CMD ["web", "--config", "/config/config.yaml"]
+# 注意：--config 是全局参数，必须放在子命令之前
+CMD ["--config", "/config/config.yaml", "web"]
