@@ -6,6 +6,9 @@ TIMING_RE = re.compile(
     r"(\d{1,2}:\d{2}:\d{2}[,.]\d{1,3})\s*-->\s*(\d{1,2}:\d{2}:\d{2}[,.]\d{1,3})"
 )
 
+# ASS 行内样式：<font>/<b>/<i> 等 HTML 标签、{\...} 覆写块——翻译前应剥掉
+MARKUP_RE = re.compile(r"<[^>]+>|\{[^}]*\}")
+
 
 def _norm_ts(ts: str) -> str:
     return ts.replace(".", ",")
@@ -21,8 +24,8 @@ class Cue:
         self.text = text.strip("\n").strip()
 
     def as_line(self) -> str:
-        """作为单行文本送翻译（cue 内部换行折成空格）。"""
-        return " ".join(self.text.splitlines()).strip()
+        """作为单行文本送翻译（去样式标签、cue 内换行折空格）。"""
+        return " ".join(MARKUP_RE.sub("", self.text).split()).strip()
 
     def set_line(self, line: str):
         self.text = line.strip()
