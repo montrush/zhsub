@@ -37,7 +37,8 @@ DEFAULTS = {
         "max_retries": 3,
         "request_timeout": 180,
         "per_item_budget_min": 60,
-        "think": False,   # qwen3 关闭思考（实测 3.88 ollama 支持）；老版 ollama 报错就改回 null
+        # qwen3-8b-translate 微调模型的思考是训练的一部分：think=false 会导致偶发空回复（2026-10-11 夜实测），保持 null
+        "think": None,
     },
     "schedule": {
         "window": ["01:00", "07:00"],

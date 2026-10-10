@@ -147,13 +147,15 @@ class SubTranslator:
 
     def _single(self, line: str) -> str:
         if self.deadline and time.time() > self.deadline:
-            raise BudgetExceeded(f"超过单集预算（单行降级阶段）")
+            raise BudgetExceeded("超过单集预算（单行降级阶段）")
         self.stats["single_fallback"] += 1
         reply = self._chat_once(f"请翻译：\n1|{line}")
         aligned = parse_numbered_reply(reply, 1)
         if aligned:
             return next(iter(aligned.values()))
-        return reply.strip().splitlines()[0] if reply.strip() else line
+        lines = reply.strip().splitlines()
+        # 空回复/无编号：能剥出文本就用，否则保留原文（宁缺毋错）
+        return lines[0].strip() if lines and lines[0].strip() else line
 
     def translate_lines(self, lines, progress=None):
         """翻译一批字幕文本行，返回等长译文列表。批次失败自动降级单行。"""
