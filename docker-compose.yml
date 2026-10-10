@@ -14,6 +14,8 @@ services:
       - /mnt/user/Movie/emby-mv:/media/emby-mv:ro     # 本地真实文件电影库（没有可删）
       - ./config:/config
       - ./data:/config/data
+    environment:
+      - TZ=Asia/Shanghai      # 夜窗按本地时间；缺失时容器是 UTC 会差 8 小时
     ports:
       - "8085:8085"          # WebUI：http://NAS:8085
     logging:
