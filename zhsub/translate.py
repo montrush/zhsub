@@ -5,7 +5,6 @@ openai_translate.py 的 prompt，改进点：批次内每行带编号，按编�
 不再依赖"按换行拆分数组"这种对空行敏感的做法。
 """
 
-import json
 import random
 import re
 import time
@@ -55,12 +54,15 @@ class Ollama:
         self.max_retries = max_retries
 
     def chat(self, system: str, user: str) -> str:
+        return self.chat_messages([
+            {"role": "system", "content": system},
+            {"role": "user", "content": user},
+        ])
+
+    def chat_messages(self, messages) -> str:
         payload = {
             "model": self.model,
-            "messages": [
-                {"role": "system", "content": system},
-                {"role": "user", "content": user},
-            ],
+            "messages": messages,
             "stream": False,
             # num_ctx 限制 KV 上下文，防 ollama 默认大分配挤占 VRAM（0917 实证补丁）
             "options": {
@@ -166,20 +168,6 @@ class SubTranslator:
 
 
 def load_glossary(glossary_dir: str, series: str):
-    """优先 <剧名>.json，其次 _default.json。文件不存在返回 None。"""
-    import os
-    if not glossary_dir:
-        return None
-    for name in (f"{series}.json" if series else None, "_default.json"):
-        if not name:
-            continue
-        p = os.path.join(glossary_dir, name)
-        if os.path.isfile(p):
-            try:
-                with open(p, "r", encoding="utf-8") as f:
-                    d = json.load(f)
-                if isinstance(d, dict) and d:
-                    return d
-            except (OSError, json.JSONDecodeError):
-                pass
-    return None
+    """兼容旧签名，见 glossary.load_glossary。"""
+    from .glossary import load_glossary as _load
+    return _load(glossary_dir, series)

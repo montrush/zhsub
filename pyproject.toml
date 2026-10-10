@@ -19,6 +19,9 @@ classifiers = [
 dependencies = [
     "requests>=2.25",
     "PyYAML>=5.4",
+    "fastapi>=0.110",
+    "uvicorn>=0.29",
+    "pydantic>=2.5",
 ]
 
 [project.optional-dependencies]
@@ -29,3 +32,6 @@ zhsub = "zhsub.__main__:main"
 
 [tool.setuptools]
 packages = ["zhsub"]
+
+[tool.setuptools.package-data]
+zhsub = ["static/*"]

@@ -44,6 +44,20 @@ DEFAULTS = {
         "scan_interval_min": 5,
         "rescanned_hours": 24,
     },
+    "research": {
+        "enabled": True,      # 翻译前允许联网收集译名资料
+        "auto": True,         # 缺词表时自动触发（pipeline 内）
+        "proxy": "",          # 搜索/TMDB 代理，如 http://192.168.3.88:10900；留空直连
+        "search_provider": "ddg",
+        "tmdb_api_key": "",
+        "max_rounds": 6,
+        "num_ctx": 8192,
+    },
+    "web": {
+        "host": "0.0.0.0",
+        "port": 8085,
+        "worker_thread": True,   # web 进程内随启夜窗 worker
+    },
     "asr": {"enabled": False, "endpoint": ""},
 }
 

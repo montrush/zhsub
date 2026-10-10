@@ -3,8 +3,8 @@
 import os
 import time
 
-from . import extract, paths, probe, srtio, store
-from .translate import Ollama, SubTranslator, load_glossary
+from . import extract, glossary, paths, probe, srtio, store
+from .translate import Ollama, SubTranslator
 
 
 class BudgetExceeded(RuntimeError):
@@ -18,9 +18,9 @@ class Pipeline:
         self.store = store.Store(cfg["paths"]["data_dir"])
 
     # ---- helpers -------------------------------------------------------
-    def _translator(self, series: str) -> SubTranslator:
+    def _translator(self, series: str, tmdb_id=None) -> SubTranslator:
         t = self.cfg["translate"]
-        glossary = load_glossary(self.cfg["paths"]["glossary_dir"], series)
+        terms = glossary.load_glossary(self.cfg["paths"]["glossary_dir"], series, tmdb_id)
         ai = Ollama(
             base_url=t["base_url"], model=t["model"], num_ctx=t.get("num_ctx", 4096),
             temperature=t.get("temperature", 0.2), top_p=t.get("top_p", 0.9),
@@ -37,6 +37,22 @@ class Pipeline:
             except OSError:
                 continue
         return 0.0
+
+    def _ensure_glossary(self, series: str, tmdb_id=None):
+        """翻译前保证有词表：缺失时（配置允许）先联网收集译名资料。"""
+        if not series:
+            return
+        if glossary.find_glossary(self.cfg["paths"]["glossary_dir"], series, tmdb_id):
+            return
+        r = self.cfg.get("research") or {}
+        if not (r.get("enabled") and r.get("auto", True)):
+            return
+        self.log(f"[research] 《{series}》缺词表，先联网收集译名资料…")
+        try:
+            from .research import Researcher
+            Researcher(self.cfg, log=self.log).collect(series, tmdb_id)
+        except Exception as e:  # noqa: BLE001 - 资料收集失败不阻塞翻译
+            self.log(f"[research] 收集失败（继续翻译，稍后可重试）: {e}")
 
     # ---- main ----------------------------------------------------------
     def process(self, local_path: str, item: dict = None) -> dict:
@@ -93,9 +109,10 @@ class Pipeline:
                                 "detail": f"内嵌中字轨#{idx}"}
             self.log(f"[warn] {os.path.basename(local_path)} 中字轨均为空壳，降级翻译")
 
-        # ② 内嵌外文字幕 → 本地 LLM 翻译
+        # ② 内嵌外文字幕 → 本地 LLM 翻译（译名资料收集 → 批翻译）
         foreign = probe.pick_foreign_text_track(tracks)
         if foreign:
+            self._ensure_glossary(series, item.get("tmdb_id"))
             budget_min = self.cfg["translate"].get("per_item_budget_min", 60)
             deadline = t0 + budget_min * 60
             src_srt = extract_out + ".src.tmp"
@@ -105,7 +122,7 @@ class Pipeline:
                 with open(src_srt, "r", encoding="utf-8", errors="replace") as f:
                     cues = srtio.parse_srt(f.read())
                 work = [(c, c.as_line()) for c in cues if c.as_line()]
-                translator = self._translator(series)
+                translator = self._translator(series, item.get("tmdb_id"))
                 lines = [w[1] for w in work]
 
                 def guard(done_n, total_n):

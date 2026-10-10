@@ -15,9 +15,10 @@ import time
 from . import scan as scan_mod
 from . import srtio, store
 from .config import load_config
+from .glossary import load_glossary
 from .pipeline import Pipeline
 from .scheduler import Worker
-from .translate import Ollama, SubTranslator, load_glossary
+from .translate import Ollama, SubTranslator
 
 
 def cmd_scan(cfg, args):
@@ -88,6 +89,26 @@ def cmd_status(cfg, args):
         print("尚无扫描结果（zhsub scan）")
 
 
+def cmd_research(cfg, args):
+    from .research import Researcher
+    p = Researcher(cfg, log=print).collect(args.series, args.tmdb, force=args.force)
+    print("词表:", p or "未生成")
+
+
+def cmd_web(cfg, args):
+    from .web import serve
+    serve(cfg, args.config or _default_cfg_path(), host=args.host, port=args.port,
+          worker=not args.no_worker)
+
+
+def _default_cfg_path() -> str:
+    import os
+    for cand in ("config.yaml", "/config/config.yaml"):
+        if os.path.isfile(cand):
+            return cand
+    return "config.yaml"
+
+
 def cmd_translate_srt(cfg, args):
     t = cfg["translate"]
     glossary = load_glossary(cfg["paths"]["glossary_dir"], args.series or "")
@@ -139,6 +160,18 @@ def main(argv=None):
 
     sub.add_parser("status", help="统计").set_defaults(fn=cmd_status)
 
+    sp = sub.add_parser("research", help="联网收集译名资料，生成词表")
+    sp.add_argument("--series", required=True, help="系列名")
+    sp.add_argument("--tmdb", type=int, default=None, help="TMDB 剧集号（推荐，译名更准）")
+    sp.add_argument("--force", action="store_true", help="已有词表也重新收集")
+    sp.set_defaults(fn=cmd_research)
+
+    sp = sub.add_parser("web", help="WebUI + 夜窗 worker（Docker 默认）")
+    sp.add_argument("--host", default=None)
+    sp.add_argument("--port", type=int, default=None)
+    sp.add_argument("--no-worker", action="store_true", help="只起 WebUI，不跑 worker 线程")
+    sp.set_defaults(fn=cmd_web)
+
     sp = sub.add_parser("translate-srt", help="翻译单个 srt")
     sp.add_argument("input")
     sp.add_argument("-o", "--output")
@@ -147,6 +180,11 @@ def main(argv=None):
 
     args = p.parse_args(argv)
     cfg = load_config(args.config)
+    if args.cmd == "web":
+        import os
+        w = cfg.get("web") or {}
+        args.host = args.host or w.get("host", "0.0.0.0")
+        args.port = args.port or int(w.get("port", 8085))
     return args.fn(cfg, args)
 
 

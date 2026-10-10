@@ -10,6 +10,7 @@ COPY zhsub ./zhsub
 RUN pip install --no-cache-dir .
 
 VOLUME ["/config", "/media/strm", "/media/cloud115"]
+EXPOSE 8085
 
 ENTRYPOINT ["zhsub"]
-CMD ["worker", "--config", "/config/config.yaml"]
+CMD ["web", "--config", "/config/config.yaml"]

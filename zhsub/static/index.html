@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>zhsub · 中文字幕补给站</title>
+<style>
+:root{--bg:#0f1419;--card:#1a2129;--line:#2a3441;--tx:#dbe4ee;--dim:#8b9bab;--ac:#4cc38a;--warn:#e0a458;--err:#e05b5b}
+*{box-sizing:border-box}
+body{margin:0;font:14px/1.6 system-ui,"Microsoft YaHei",sans-serif;background:var(--bg);color:var(--tx)}
+header{display:flex;align-items:center;gap:14px;padding:10px 18px;border-bottom:1px solid var(--line);background:var(--card)}
+header h1{font-size:17px;margin:0}header .sub{color:var(--dim);font-size:12px}
+nav{display:flex;gap:4px;margin-left:auto}
+nav button{background:none;border:none;color:var(--dim);padding:7px 13px;cursor:pointer;border-radius:8px;font-size:14px}
+nav button.on{background:var(--line);color:var(--tx)}
+main{max-width:980px;margin:18px auto;padding:0 14px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:16px;margin-bottom:14px}
+.card h2{margin:0 0 10px;font-size:15px;color:var(--ac)}
+.kv{display:flex;gap:18px;flex-wrap:wrap}
+.kv div b{display:block;font-size:19px}
+.kv div span{color:var(--dim);font-size:12px}
+table{width:100%;border-collapse:collapse;font-size:13px}
+th,td{text-align:left;padding:6px 8px;border-bottom:1px solid var(--line)}
+th{color:var(--dim);font-weight:500}
+button.act{background:var(--ac);border:none;color:#08110c;padding:7px 14px;border-radius:8px;cursor:pointer;font-weight:600}
+button.ghost{background:var(--line);border:none;color:var(--tx);padding:6px 12px;border-radius:8px;cursor:pointer}
+input,select,textarea{background:#11161c;border:1px solid var(--line);color:var(--tx);border-radius:8px;padding:7px 9px;font:inherit;width:100%}
+textarea{min-height:44vh;font-family:ui-monospace,Consolas,monospace;font-size:12.5px;white-space:pre}
+.row{display:flex;gap:8px;align-items:center;margin:8px 0;flex-wrap:wrap}
+.row label{color:var(--dim);min-width:120px;font-size:13px}
+#log{font-family:ui-monospace,monospace;font-size:12.5px;max-height:46vh;overflow:auto;white-space:pre-wrap;color:var(--dim)}
+.tag{display:inline-block;padding:1px 8px;border-radius:10px;background:var(--line);color:var(--dim);font-size:12px}
+.ok{color:var(--ac)}.warn{color:var(--warn)}.err{color:var(--err)}
+.muted{color:var(--dim);font-size:12.5px}
+.hidden{display:none}
+.gbar{display:flex;gap:8px;margin-bottom:10px;flex-wrap:wrap}
+.gbar input{width:220px}
+</style>
+</head>
+<body>
+<header>
+  <h1>zhsub</h1><span class="sub">中文字幕补给站</span>
+  <nav>
+    <button data-t="status" class="on">状态</button>
+    <button data-t="gloss">词表库</button>
+    <button data-t="tasks">任务</button>
+    <button data-t="cfg">设置</button>
+  </nav>
+</header>
+<main>
+
+<section id="t-status">
+  <div class="card"><h2>概况</h2><div class="kv" id="stats"></div><div id="scaninfo" class="muted" style="margin-top:10px"></div></div>
+  <div class="card"><h2>最近扫描 · 缺中字分布</h2><div id="scanTable"></div>
+    <div class="row"><button class="act" onclick="doScan()">全库扫描</button>
+    <label class="muted">探针上限 <input id="probeLimit" type="number" value="300" style="width:90px"></label>
+    <span class="muted">扫描会调 Emby API + ffprobe 抽样分类，耗时数分钟</span></div></div>
+  <div class="card"><h2>运行日志</h2><div id="log"></div></div>
+</section>
+
+<section id="t-gloss" class="hidden">
+  <div class="card"><h2>词表库（识别规则：系列名.tmdb号.json → 系列名.json → _default.json）</h2>
+    <div class="gbar">
+      <input id="gSeries" placeholder="系列名，如 地狱厨房">
+      <input id="gTmdb" placeholder="TMDB 号（可选）" style="width:150px">
+      <button class="act" onclick="doResearch()">联网收集资料生成词表</button>
+      <button class="ghost" onclick="newGloss()">新建空白词表</button>
+    </div>
+    <div id="gTable"></div></div>
+  <div class="card" id="gEditor" style="display:none"><h2 id="gTitle">词表</h2>
+    <textarea id="gText" spellcheck="false"></textarea>
+    <div class="row"><button class="act" onclick="saveGloss()">保存</button><button class="ghost" onclick="closeGloss()">关闭</button>
+    <button class="ghost" style="margin-left:auto;color:var(--err)" onclick="delGloss()">删除</button></div></div>
+</section>
+
+<section id="t-tasks" class="hidden">
+  <div class="card"><h2>立即处理</h2>
+    <div class="row"><label>处理条数</label><input id="runLimit" type="number" value="3" style="width:90px">
+    <button class="act" onclick="doRun()">从清单开始处理</button>
+    <span class="muted">夜窗 worker 也会在 01:00–07:00 自动干活</span></div></div>
+  <div class="card"><h2>任务记录</h2><table id="jobTable"><thead><tr><th>时间</th><th>类型</th><th>状态</th><th>结果</th></tr></thead><tbody></tbody></table></div>
+</section>
+
+<section id="t-cfg" class="hidden">
+  <div class="card"><h2>配置（YAML）</h2>
+    <p class="muted">关键项：emby.api_key ｜ translate.base_url / model ｜ research.proxy（联网搜索代理，本机环境用 http://192.168.3.88:10900）｜ research.tmdb_api_key ｜ schedule.window。保存即热生效（worker 线程下一轮读取）。</p>
+    <textarea id="cfgText" spellcheck="false"></textarea>
+    <div class="row"><button class="act" onclick="saveCfg()">保存配置</button><button class="ghost" onclick="loadCfg()">重读</button></div></div>
+</section>
+
+</main>
+<script>
+const $=s=>document.querySelector(s);let curJob=[],logSeq=0,curFile=null;
+document.querySelectorAll('nav button').forEach(b=>b.onclick=()=>{switchTab(b.dataset.t,b)});
+function switchTab(t,btn){document.querySelectorAll('nav button').forEach(x=>x.classList.remove('on'));if(btn)btn.classList.add('on');
+['status','gloss','tasks','cfg'].forEach(x=>$('#t-'+x).classList.toggle('hidden',x!==t));if(t==='status')loadStatus();if(t==='gloss')loadGloss();if(t==='tasks')renderJobs();if(t==='cfg')loadCfg();}
+async function j(url,opt){const r=await fetch(url,opt);if(!r.ok)throw new Error((await r.json().catch(()=>({}))).detail||r.status);return r.json();}
+async function loadStatus(){try{const s=await j('/api/status');
+$('#stats').innerHTML=`<div><b>${s.store.done}</b><span>累计已处理</span></div>
+<div><b>${s.glossaries}</b><span>词表</span></div>
+<div><b class="${s.worker_enabled?'ok':''}">${s.worker_enabled?'运行中':'未启用'}</b><span>夜窗worker</span></div>
+<div><b>v${s.version}</b><span>版本</span></div>`;
+if(s.last_scan){const sum=s.last_scan.summary;$('#scaninfo').textContent=`最近扫描 ${s.last_scan.generated_at}（${s.last_scan.source}）`;
+$('#scanTable').innerHTML='<table><tr><th>库</th><th>总数</th><th>缺中字</th></tr>'+Object.entries(sum).map(([k,v])=>`<tr><td>${k}</td><td>${v.total}</td><td class="warn">${v.missing}</td></tr>`).join('')+'</table>';}
+}catch(e){$('#scaninfo').textContent='加载失败: '+e;}}
+async function doScan(){const lim=+$('#probeLimit').value||0;const r=await j('/api/scan',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({source:'emby',probe:true,probe_limit:lim})});watch(r.job,'扫描');switchTab('tasks');}
+async function doRun(){const lim=+$('#runLimit').value||3;const r=await j('/api/run',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({limit:lim})});watch(r.job,'处理');switchTab('tasks');}
+async function doResearch(){const s=$('#gSeries').value.trim();if(!s)return alert('先填系列名');const t=+$('#gTmdb').value||null;
+const r=await j('/api/research',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({series:s,tmdb_id:t,force:true})});watch(r.job,'research');switchTab('tasks');}
+let jobs={};
+function watch(id,label){jobs[id]={id,label};}
+function renderJobs(){const tb=$('#jobTable tbody');tb.innerHTML='';Object.values(jobs).forEach(jk=>{tb.innerHTML+=`<tr><td class="muted">…</td><td>${jk.label}</td><td id="js-${jk.id}">运行中…</td><td id="jr-${jk.id}"></td></tr>`;});}
+async function poll(){try{const lines=await j('/api/log?after='+logSeq);if(lines.length){logSeq=lines[lines.length-1].seq;const el=$('#log');el.textContent+=lines.map(l=>`[${l.ts}] ${l.msg}`).join('\n')+'\n';el.scrollTop=el.scrollHeight;}
+for(const id in jobs){const jk=await j('/api/jobs/'+id);const s=document.getElementById('js-'+id);if(!s)continue;
+if(jk.status!=='running'){s.textContent=jk.status==='done'?'完成':'失败';s.className=jk.status==='done'?'ok':'err';
+document.getElementById('jr-'+id).textContent=jk.result?JSON.stringify(jk.result).slice(0,120):'';delete jobs[id];}}}catch(e){}}
+async function loadGloss(){const list=await j('/api/glossaries');
+$('#gTable').innerHTML=list.length?'<table><tr><th>文件</th><th>条目</th><th>TMDB</th><th>更新时间</th><th></th></tr>'+list.map(g=>`<tr><td>${g.file}</td><td>${g.terms_count}</td><td>${g.tmdb_id??'-'}</td><td class="muted">${g.mtime}</td><td><button class="ghost" onclick="editGloss('${g.file}')">编辑</button></td></tr>`).join('')+'</table>':'<span class="muted">词表库为空——用上面的按钮联网生成，或把 json 放进 glossary_dir</span>';}
+async function editGloss(f){curFile=f;const d=await j('/api/glossaries/'+encodeURIComponent(f));
+$('#gTitle').textContent=f;$('#gText').value=JSON.stringify(d,null,1);$('#gEditor').style.display='block';window.scrollTo(0,0);}
+function newGloss(){const s=$('#gSeries').value.trim()||'新剧';curFile=(s)+(+$('#gTmdb').value?'.tmdb'+$('#gTmdb').value:'')+'.json';
+$('#gTitle').textContent=curFile+'（新）';$('#gText').value=JSON.stringify({title:s,tmdb_id:+$('#gTmdb').value||null,terms:{},notes:''},null,1);$('#gEditor').style.display='block';}
+async function saveGloss(){try{const d=JSON.parse($('#gText').value);await j('/api/glossaries/'+encodeURIComponent(curFile),{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(d)});closeGloss();loadGloss();}catch(e){alert('保存失败: '+e);}}
+async function delGloss(){if(!confirm('删除 '+curFile+'？'))return;await j('/api/glossaries/'+encodeURIComponent(curFile),{method:'DELETE'});closeGloss();loadGloss();}
+function closeGloss(){$('#gEditor').style.display='none';curFile=null;}
+async function loadCfg(){const c=await j('/api/config');const raw=await(await fetch('/api/config_raw')).text();
+$('#cfgText').value='# 配置文件: '+c.path+'\n\n'+raw;}
+async function saveCfg(){const r=await fetch('/api/config',{method:'PUT',headers:{'Content-Type':'application/json'},
+body:JSON.stringify({text:$('#cfgText').value})});
+if(r.ok){alert('已保存，热生效');}else{alert('失败: '+(await r.json()).detail);}}
+setInterval(poll,2000);poll();loadStatus();
+</script>
+</body>
+</html>

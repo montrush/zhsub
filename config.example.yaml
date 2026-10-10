@@ -56,6 +56,20 @@ schedule:
   scan_interval_min: 5
   rescanned_hours: 24                     # 候选清单最长复用时长，超时自动重扫
 
+research:
+  enabled: true                           # 翻译前允许联网收集译名资料
+  auto: true                              # 缺词表时自动触发（可 WebUI 手动）
+  proxy: ""                               # 搜索/TMDB 的 HTTP 代理，如 http://192.168.1.88:10900；留空直连
+  search_provider: ddg                    # 联网搜索后端（duckduckgo html，无需 key）
+  tmdb_api_key: ""                        # themoviedb.org v3 key，强烈建议配置（官方译名最准）
+  max_rounds: 6                           # 模型搜索-回答循环上限
+  num_ctx: 8192                           # 资料收集用的上下文窗口（比翻译大）
+
+web:
+  host: "0.0.0.0"                         # WebUI 监听；仅面向家庭内网，勿暴露公网
+  port: 8085
+  worker_thread: true                     # web 进程内随启夜窗 worker
+
 asr:
   enabled: false                          # 二期：PGS/无文本轨的兜底通路
   endpoint: ""

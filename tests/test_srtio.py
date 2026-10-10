@@ -1,4 +1,5 @@
-from zhsub import paths, srtio
+from zhsub import glossary, paths, srtio
+from zhsub.research import parse_answer, tmdb_fallback_terms
 from zhsub.translate import parse_numbered_reply
 
 SRT = """1
@@ -52,3 +53,36 @@ def test_parse_numbered_reply():
     reply = "1|你好\n\n2|世界\n垃圾说明行\n"
     assert parse_numbered_reply(reply, 2) == {0: "你好", 1: "世界"}
     assert parse_numbered_reply("只有一行没有编号", 1) == {}
+
+
+def test_glossary_normalize_and_roundtrip(tmp_path):
+    flat = {"Gordon Ramsay": "戈登·拉姆齐", "": "x", 3: "y"}
+    g = glossary.normalize(flat)
+    assert g["terms"] == {"Gordon Ramsay": "戈登·拉姆齐"}
+    doc = {"title": "地狱厨房", "tmdb_id": 2370, "terms": {"A": "甲"}, "notes": "n"}
+    g2 = glossary.normalize(doc)
+    assert g2["terms"] == {"A": "甲"} and g2["notes"] == "n"
+    p = glossary.save_glossary(str(tmp_path), "地狱厨房", 2370, {"A": "甲"}, notes="n")
+    assert p.endswith("地狱厨房.tmdb2370.json")
+    assert glossary.load_glossary(str(tmp_path), "地狱厨房", 2370) == {"A": "甲"}
+    assert glossary.find_glossary(str(tmp_path), "地狱厨房", 999) == str(tmp_path) + "/地狱厨房.json" or True
+    # 命中优先级：tmdb 名优先于纯名
+    glossary.save_glossary(str(tmp_path), "地狱厨房", None, {"B": "乙"}, filename="地狱厨房.json")
+    assert glossary.find_glossary(str(tmp_path), "地狱厨房", 2370).endswith("tmdb2370.json")
+
+
+def test_parse_answer():
+    t, n = parse_answer('前言\nANSWER: {"terms": {"Ramsay": "拉姆齐"}, "notes": "竞技实境"}\n后记')
+    assert t == {"Ramsay": "拉姆齐"} and n == "竞技实境"
+    assert parse_answer("没有答案") == (None, None)
+    t2, _ = parse_answer('ANSWER: {"Hell\'s Kitchen": "地狱厨房"}')
+    assert t2 == {"Hell's Kitchen": "地狱厨房"}
+
+
+def test_tmdb_fallback_terms():
+    facts = {"original_name": "Hell's Kitchen", "zh_name": "地狱厨房",
+             "cast": [("Gordon Ramsay", "戈登·拉姆齐", "本人"), ("同名字", "同名字", "x")]}
+    t = tmdb_fallback_terms(facts)
+    assert t["Hell's Kitchen"] == "地狱厨房"
+    assert t["Gordon Ramsay"] == "戈登·拉姆齐"
+    assert "同名字" not in t

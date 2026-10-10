@@ -15,6 +15,13 @@ def _series_of(local_path: str) -> str:
     return parent
 
 
+def _int_tmdb(v):
+    try:
+        return int(str(v))
+    except (TypeError, ValueError):
+        return None
+
+
 def _excluded(cfg, name) -> bool:
     return name in set(cfg["detect"].get("exclude_series") or [])
 
@@ -32,8 +39,15 @@ def scan(cfg, source: str = "emby", do_probe: bool = False, probe_limit: int = 0
         for lib in cfg["emby"]["libraries"]:
             lib_id = emb.resolve_library_id(lib)
             total = missing = unresolved = 0
+            series_ids = set()
+            raw_items = []
             for it in emb.walk(lib_id, cfg["emby"].get("item_types") or ["Episode", "Movie"]):
                 total += 1
+                if it.get("SeriesId"):
+                    series_ids.add(it["SeriesId"])
+                raw_items.append(it)
+            tmdb_map = emby_mod.series_tmdb_map(emb, series_ids)
+            for it in raw_items:
                 raw_path = it.get("Path") or ""
                 local = paths.map_prefix(raw_path, cfg["paths"]["emby_path_map"])
                 if not local or not os.path.exists(local):
@@ -41,14 +55,18 @@ def scan(cfg, source: str = "emby", do_probe: bool = False, probe_limit: int = 0
                     continue
                 if emby_mod.has_zh_streams(it) or paths.sibling_zh(local, markers):
                     continue
-                if _excluded(cfg, it.get("SeriesName") or _series_of(local)):
+                series = it.get("SeriesName") or _series_of(local)
+                if _excluded(cfg, series):
                     continue
                 missing += 1
+                tmdb = tmdb_map.get(str(it.get("SeriesId") or "")) or \
+                    _int_tmdb((it.get("ProviderIds") or {}).get("Tmdb"))
                 items.append({
                     "item_id": it.get("Id"),
                     "type": it.get("Type"),
                     "name": it.get("Name"),
-                    "series": it.get("SeriesName") or _series_of(local),
+                    "series": series,
+                    "tmdb_id": tmdb,
                     "emby_path": raw_path,
                     "local_path": local,
                 })

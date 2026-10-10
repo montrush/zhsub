@@ -1,0 +1,18 @@
+{
+ "title": "地狱厨房",
+ "tmdb_id": 2370,
+ "terms": {
+  "Hell's Kitchen": "地狱厨房",
+  "Gordon Ramsay": "戈登·拉姆齐",
+  "Hell's Kitchen: Chef's Kitchen": "地狱厨房：厨师练习生"
+ },
+ "notes": "真人秀节目，口语化，评委点评语气夸张，包含淘汰环节术语",
+ "meta": {
+  "source": "model",
+  "model": "qwen3-8b-translate",
+  "queried_title": "地狱厨房",
+  "tmdb_zh_name": "地狱厨房",
+  "created_at": "2026-10-10 22:26:59"
+ },
+ "updated_at": "2026-10-10 22:26:59"
+}

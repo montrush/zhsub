@@ -24,27 +24,32 @@
 ## 特性
 
 - **媒体库感知**：通过 Emby API 扫描指定媒体库，精确列出「哪些视频缺中文字幕」（按库、按剧统计），也可纯文件系统扫描（不依赖 Emby）。
-- **三级处理链**：内嵌中文字幕直接抽取（带"空壳轨"校验）→ 内嵌英文字幕走本地大模型翻译 → 无文本轨留给 ASR（二期）。
-- **翻译质量保障**：批次翻译 + 行号对齐 + 单行降级；上下文窗口保持人名/语气连贯；每剧译名表（glossary）注入；指数退避重试。
+- **三级处理链**：内嵌中文字幕直接抽取（带"空壳轨"校验）→ 内嵌英文字幕走本地大模型翻译 → 无文本轨留给 ASR（规划中）。
+- **翻译前资料收集**：遇到没词表的新剧，先用本地 qwen 联网收集译名资料（TMDB 官方中文数据 + DuckDuckGo 搜索，支持 HTTP 代理配置），自动生成该剧词表再开翻。
+- **词表库**：每剧一个 JSON，按「系列名 + TMDB 号」识别；翻译时注入 system prompt 保证人名/术语一致。老格式平铺词表直接拷入即用。
+- **翻译质量保障**：批次翻译 + 行号对齐 + 单行降级；上下文窗口保持人名/语气连贯；指数退避重试。
+- **WebUI**：状态/日志、触发扫描与处理、词表库在线编辑、代理与模型等配置热生效（仅面向家庭内网，无鉴权，勿暴露公网）。
 - **为 strm 库设计**：识别 `.strm` 内容路径并映射到本地镜像，产物写在 strm 树里，Emby 直接捡取，**全程不触碰网盘云端**。
 - **夜窗调度**：只在配置的时段（默认 01:00–07:00）干活，避免与白天观影抢带宽/IO。
-- **无头运行**：单个容器，SQLite 记账，断点续跑；WebUI 在 Roadmap 里。
+- **无头运行**：单个容器，SQLite 记账，断点续跑。
 
 ## 快速开始
 
 ```bash
 git clone https://github.com/montrush/zhsub.git
 cd zhsub
-cp config.example.yaml config/config.yaml   # 按注释填你的 Emby 地址/key、ollama 地址
+cp config.example.yaml config/config.yaml   # 按注释填你的 Emby 地址/key、ollama 地址、代理
 mkdir -p config data
 docker compose up -d
-docker compose logs -f                      # 看夜窗干活
 ```
+
+浏览器打开 `http://NAS:8085`：**设置**页填代理/TMDB key → **状态**页点「全库扫描」→ **词表库**页给要翻的剧生成词表 → **任务**页试跑几集。夜窗 worker 会在配置时段自动处理。
 
 先手动跑一次全库扫描看结果（不用等夜窗）：
 
 ```bash
 docker compose exec zhsub zhsub scan          # 扫描 Emby，输出缺中字清单+统计
+docker compose exec zhsub zhsub research --series 地狱厨房 --tmdb 2370   # 给某剧收集译名资料
 docker compose exec zhsub zhsub run --limit 3 # 试处理 3 个（加 --dry-run 只看不做）
 ```
 
@@ -52,6 +57,7 @@ docker compose exec zhsub zhsub run --limit 3 # 试处理 3 个（加 --dry-run 
 
 ```bash
 pip install .                 # 需要 ffmpeg 在 PATH 中
+zhsub web                     # WebUI + 夜窗 worker（--no-worker 只起 WebUI）
 zhsub scan --config myconfig.yaml
 ```
 
@@ -65,9 +71,11 @@ zhsub scan --config myconfig.yaml
 | `paths.strm_roots` | 本地 strm/媒体树（容器内读写） |
 | `paths.path_map` | strm 文件内容路径 → 本地镜像路径的前缀映射 |
 | `paths.emby_path_map` | Emby 条目 Path → 本地路径的前缀映射 |
+| `paths.glossary_dir` | 词表库目录：`<剧名>.tmdb<号>.json`，格式见 [`glossaries/README.md`](glossaries/README.md) |
 | `translate.*` | ollama 地址、模型名、批大小、上下文窗口 |
-| `schedule.window` | 夜窗时段；`batch` 每批处理数；`stuck_min` 单集超时兜底 |
-| `paths.glossary_dir` | 译名表目录：`<剧名>.json`（`{"术语":"译名"}`）或 `_default.json` |
+| `research.*` | 资料收集：`proxy`（搜索/TMDB 走的 HTTP 代理）、`tmdb_api_key`、搜索后端 |
+| `schedule.window` | 夜窗时段；`last_fire` 最晚开新集时刻；`stuck` 兜底参数 |
+| `web.*` | WebUI 监听地址/端口、是否随启夜窗 worker |
 
 ### 字幕产物命名
 
@@ -88,10 +96,11 @@ Emby 侧零改动。
 
 ## Roadmap
 
-- [ ] WebUI（FastAPI 单页：队列/历史/进度、每剧译名表编辑、失败重试）
+- [x] WebUI（状态/任务/词表库/配置热生效）
 - [ ] ASR 兜底（PGS 图形轨/无字幕轨，对接 faster-whisper 通路）
+- [x] 联网资料收集 + 词表库（TMDB/搜索，代理可配）
 - [ ] MoviePilot 联动：入库 webhook 即时处理新集（现在靠定时扫描）
-- [ ] 翻译模型/端点多路配置
+- [ ] 翻译模型/端点多路配置；WebUI 加鉴权选项
 
 ## License
 
