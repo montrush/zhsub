@@ -86,3 +86,18 @@ def test_tmdb_fallback_terms():
     assert t["Hell's Kitchen"] == "地狱厨房"
     assert t["Gordon Ramsay"] == "戈登·拉姆齐"
     assert "同名字" not in t
+
+
+def test_pipeline_translator_wiring(tmp_path):
+    """回归：_translator 必须把词表 dict（而非模块）传给 SubTranslator。"""
+    import json as _json
+    from zhsub.config import DEFAULTS
+    from zhsub.pipeline import Pipeline
+    import copy
+    cfg = copy.deepcopy(DEFAULTS)
+    cfg["paths"]["data_dir"] = str(tmp_path / "data")
+    cfg["paths"]["glossary_dir"] = str(tmp_path)
+    (tmp_path / "某剧.tmdb1.json").write_text(
+        _json.dumps({"terms": {"Subaru": "菜月·昴"}}, ensure_ascii=False), encoding="utf-8")
+    st = Pipeline(cfg)._translator("某剧", 1)
+    assert "菜月·昴" in st.system

@@ -27,7 +27,7 @@ class Pipeline:
             request_timeout=t.get("request_timeout", 180),
             max_retries=t.get("max_retries", 3),
         )
-        return SubTranslator(ai, glossary=glossary, batch_size=t.get("batch_size", 10),
+        return SubTranslator(ai, glossary=terms, batch_size=t.get("batch_size", 10),
                              context_window=t.get("context_window", 2), log=self.log)
 
     def _media_mtime(self, local_path: str, media: str) -> float:
