@@ -236,16 +236,30 @@ def create_app(cfg: dict, cfg_path: str, start_worker: bool = True) -> FastAPI:
 
     class TestLlmReq(BaseModel):
         target: str = "gpu"  # gpu | base
+        # 填了 base_url 就直接测该端点（不读配置）——设置页表单"试测"用
+        base_url: str = ""
+        model: str = ""
+        provider: str = "ollama"
+        api_key: str = ""
+        num_gpu: int = None
 
     @app.post("/api/test_llm")
     def api_test_llm(req: TestLlmReq):
-        """向指定端点发一条小对话验证连通性（短超时、不重试）。"""
+        """向指定端点发一条小对话验证连通性（不重试；90s 超时容忍模型冷加载）。"""
         from .translate import endpoint_client
         t = dict(state["cfg"].get("translate") or {})
-        if req.target == "gpu":
+        if req.base_url.strip():
+            d = {"base_url": req.base_url.strip(),
+                 "model": req.model.strip() or t.get("model"),
+                 "provider": req.provider or "ollama",
+                 "api_key": req.api_key or "", "num_gpu": req.num_gpu}
+            desc = f"自定义 {d['base_url']}"
+        elif req.target == "gpu":
             g = t.get("gpu") or {}
             if not (g.get("enabled") and g.get("base_url")):
-                raise HTTPException(400, "GPU 端点未启用或未填 base_url")
+                raise HTTPException(
+                    400, "GPU 端点还没启用：在上方表单填好地址后可直接点本按钮试测"
+                         "（点「应用到配置并保存」后才会成为夜窗主力）")
             d = {"base_url": g["base_url"], "model": g.get("model") or t.get("model"),
                  "provider": g.get("provider", "ollama"),
                  "api_key": g.get("api_key") or "", "num_gpu": g.get("num_gpu")}
@@ -260,7 +274,7 @@ def create_app(cfg: dict, cfg_path: str, start_worker: bool = True) -> FastAPI:
         cli = endpoint_client(d, num_ctx=int(t.get("num_ctx", 4096)),
                               temperature=t.get("temperature", 0.2),
                               top_p=t.get("top_p", 0.9),
-                              request_timeout=20, max_retries=0,
+                              request_timeout=90, max_retries=0,
                               think=t.get("think"))
         t0 = time.time()
         try:
