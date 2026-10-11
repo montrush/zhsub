@@ -94,7 +94,7 @@ textarea{min-height:44vh;font-family:ui-monospace,Consolas,monospace;font-size:1
 
 <section id="t-cfg" class="hidden">
   <div class="card"><h2>GPU 加速端点</h2>
-    <p class="muted">启用后翻译与资料收集优先走 GPU 端点（由 3.88 机器提供），失败自动回退下方基础端点并冷却 10 分钟。保存即热生效，夜窗 worker 下一轮读取。「测试」按钮直接测表单当前值，不用先保存。</p>
+    <p class="muted">启用后翻译与资料收集优先走 GPU 端点（如局域网里带 GPU 的机器），失败自动回退下方基础端点并冷却 10 分钟。保存即热生效，夜窗 worker 下一轮读取。「测试」按钮直接测表单当前值，不用先保存。</p>
     <div class="row"><label style="min-width:120px">启用 GPU 端点</label><input id="gpuEnabled" type="checkbox" style="width:auto"></div>
     <div class="row"><label>端点地址</label><input id="gpuUrl" placeholder="http://192.168.1.88:11435"></div>
     <div class="row"><label>模型</label><input id="gpuModel" placeholder="留空 = 用 YAML 里 translate.model"></div>

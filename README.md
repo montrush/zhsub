@@ -8,6 +8,20 @@
 > and drop `.zh.ai.srt` next to your media/strm files. Emby/Jellyfin picks them up
 > as regular external subtitles — no plugin, no cloud, no risk.
 >
+> **English**: *夜译 ("Night-shift Translate")* is a headless service that fills missing
+> Chinese subtitles for home media libraries: it scans Emby/Jellyfin, extracts embedded
+> Chinese tracks, translates foreign subtitles with a local LLM (Ollama native or any
+> OpenAI-compatible endpoint, GPU-first with automatic fallback), builds per-series
+> glossaries via TMDB/web research, and writes `*.zh.ai.srt` next to your media/strm
+> files on a configurable nightly schedule. Documentation is Chinese-only for now.
+
+## 截图
+
+| 状态 · 暗夜 | GPU 端点 + 夜窗排班 · 优雅淡色 |
+|---|---|
+| ![状态页（暗夜主题）](docs/screenshots/status-dark.png) | ![GPU 端点配置（优雅淡色主题）](docs/screenshots/gpu-light.png) |
+| ![夜窗排班（青瓷主题）](docs/screenshots/schedule-celadon.png) | ![词表库（墨蓝主题）](docs/screenshots/glossary-midnight.png) |
+>
 > Night-shift Chinese subtitle filler for home media libraries.
 
 它解决一个问题：**库里的视频没有中文字幕时，自动补上。**
