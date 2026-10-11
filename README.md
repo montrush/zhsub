@@ -1,11 +1,14 @@
-# zhsub
+# 夜译 zhsub
 
-**zhsub** = **zh**(中文) + **sub**(字幕)：给家庭媒体库自动补齐中文字幕的无头（headless）服务。
+**夜译** = 在**夜**窗里为影音库**译**补字幕。**zhsub** = **zh**(中文) + **sub**(字幕)：
+给家庭媒体库自动补齐中文字幕的无头（headless）服务。
 
 > Scan your media library for videos missing Chinese subtitles, extract embedded
 > tracks when available, otherwise translate existing subtitles with a local LLM,
 > and drop `.zh.ai.srt` next to your media/strm files. Emby/Jellyfin picks them up
 > as regular external subtitles — no plugin, no cloud, no risk.
+>
+> Night-shift Chinese subtitle filler for home media libraries.
 
 它解决一个问题：**库里的视频没有中文字幕时，自动补上。**
 

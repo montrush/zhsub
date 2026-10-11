@@ -73,7 +73,7 @@ def create_app(cfg: dict, cfg_path: str, start_worker: bool = True) -> FastAPI:
         threading.Thread(target=worker_loop, daemon=True).start()
         log("zhsub WebUI 启动（夜窗 worker 线程已随启）")
 
-    app = FastAPI(title="zhsub")
+    app = FastAPI(title="夜译 zhsub")
 
     # ---------- 页面 ----------
     @app.get("/")

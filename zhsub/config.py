@@ -34,7 +34,7 @@ DEFAULTS = {
         # GPU 加速端点：启用后翻译/资料收集优先走它，失败自动回退 base_url
         "gpu": {
             "enabled": False,
-            "base_url": "",        # 如 http://192.168.3.88:11435
+            "base_url": "",        # 如 http://192.168.1.88:11435
             "model": "",           # 留空 = 用上面的 model
             "provider": "ollama",  # ollama | openai（OpenAI 兼容 /v1/chat/completions）
             "api_key": "",
@@ -61,7 +61,7 @@ DEFAULTS = {
     "research": {
         "enabled": True,      # 翻译前允许联网收集译名资料
         "auto": True,         # 缺词表时自动触发（pipeline 内）
-        "proxy": "",          # 搜索/TMDB 代理，如 http://192.168.3.88:10900；留空直连
+        "proxy": "",          # 搜索/TMDB 代理，如 http://192.168.1.88:10900；留空直连
         "search_provider": "ddg",
         "tmdb_api_key": "",
         "max_rounds": 6,

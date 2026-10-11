@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>zhsub · 中文字幕补给站</title>
+<title>夜译 zhsub · 中文字幕补给站</title>
 <style>
 :root,html[data-theme="dark"]{--bg:#0f1419;--card:#1a2129;--line:#2a3441;--tx:#dbe4ee;--dim:#8b9bab;--ac:#4cc38a;--warn:#e0a458;--err:#e05b5b;--input:#11161c;--ac-fg:#08110c;color-scheme:dark}
 html[data-theme="light"]{--bg:#f4f2ed;--card:#ffffff;--line:#e3dfd6;--tx:#3b4046;--dim:#8b929b;--ac:#2f9e6e;--warn:#b97a2a;--err:#c25656;--input:#faf9f6;--ac-fg:#ffffff;color-scheme:light}
@@ -44,7 +44,7 @@ textarea{min-height:44vh;font-family:ui-monospace,Consolas,monospace;font-size:1
 </head>
 <body>
 <header>
-  <h1>zhsub</h1><span class="sub">中文字幕补给站</span>
+  <h1>夜译</h1><span class="sub">zhsub · 中文字幕补给站</span>
   <nav>
     <button data-t="status" class="on">状态</button>
     <button data-t="gloss">词表库</button>
@@ -96,7 +96,7 @@ textarea{min-height:44vh;font-family:ui-monospace,Consolas,monospace;font-size:1
   <div class="card"><h2>GPU 加速端点</h2>
     <p class="muted">启用后翻译与资料收集优先走 GPU 端点（由 3.88 机器提供），失败自动回退下方基础端点并冷却 10 分钟。保存即热生效，夜窗 worker 下一轮读取。「测试」按钮直接测表单当前值，不用先保存。</p>
     <div class="row"><label style="min-width:120px">启用 GPU 端点</label><input id="gpuEnabled" type="checkbox" style="width:auto"></div>
-    <div class="row"><label>端点地址</label><input id="gpuUrl" placeholder="http://192.168.3.88:11435"></div>
+    <div class="row"><label>端点地址</label><input id="gpuUrl" placeholder="http://192.168.1.88:11435"></div>
     <div class="row"><label>模型</label><input id="gpuModel" placeholder="留空 = 用 YAML 里 translate.model"></div>
     <div class="row"><label>接口类型</label><select id="gpuProvider">
       <option value="ollama">ollama 原生（/api/chat）</option>
@@ -121,7 +121,7 @@ textarea{min-height:44vh;font-family:ui-monospace,Consolas,monospace;font-size:1
     <p class="muted">窗口可跨零点（如周五 23:00–09:00 算周五的班，覆盖到周六上午）；「收尾保护」到期前不再开新集但做完手头的。保存后写入 YAML 的 schedule 段，worker 下一轮生效。</p>
   </div>
   <div class="card"><h2>配置（YAML）</h2>
-    <p class="muted">关键项：emby.api_key ｜ translate.base_url / model ｜ translate.gpu（上面表单可改）｜ schedule（上面的「夜窗排班」卡片可改）｜ research.proxy（联网搜索代理，本机环境用 http://192.168.3.88:10900）｜ research.tmdb_api_key。保存即热生效（worker 线程下一轮读取）。</p>
+    <p class="muted">关键项：emby.api_key ｜ translate.base_url / model ｜ translate.gpu（上面表单可改）｜ schedule（上面的「夜窗排班」卡片可改）｜ research.proxy（联网搜索代理，本机环境用 http://192.168.1.88:10900）｜ research.tmdb_api_key。保存即热生效（worker 线程下一轮读取）。</p>
     <textarea id="cfgText" spellcheck="false"></textarea>
     <div class="row"><button class="act" onclick="saveCfg()">保存配置</button><button class="ghost" onclick="loadCfg()">重读</button></div></div>
 </section>
