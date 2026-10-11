@@ -53,7 +53,8 @@ DEFAULTS = {
     },
     "schedule": {
         "window": ["01:00", "07:00"],
-        "last_fire": "06:00",
+        "windows": {},        # 分日覆盖 mon..sun；[] = 当天不干活；可跨零点 ["22:00","02:00"]
+        "last_fire_min": 60,  # 距窗口结束 N 分钟不再开新集（0=干满全程；旧 last_fire 已废弃）
         "scan_interval_min": 5,
         "rescanned_hours": 24,
     },

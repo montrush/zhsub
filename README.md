@@ -29,9 +29,9 @@
 - **词表库**：每剧一个 JSON，按「系列名 + TMDB 号」识别；翻译时注入 system prompt 保证人名/术语一致。老格式平铺词表直接拷入即用。
 - **翻译质量保障**：批次翻译 + 行号对齐 + 单行降级；上下文窗口保持人名/语气连贯；指数退避重试。
 - **GPU 加速端点**：`translate.gpu` 可配第二个推理端点（ollama 原生或 OpenAI 兼容 /v1），优先走 GPU、失败自动回退基础端点（冷却 10 分钟防雪崩）；WebUI 设置页表单配置 + 一键连通性测试。
-- **WebUI**：状态/日志、触发扫描与处理、词表库在线编辑、代理与模型等配置热生效（仅面向家庭内网，无鉴权，勿暴露公网）。
+- **WebUI**：状态/日志、触发扫描与处理、词表库在线编辑、GPU 端点与夜窗排班可视化配置、多套皮肤（暗夜/优雅淡色/墨蓝/青瓷，记忆选择），配置热生效（仅面向家庭内网，无鉴权，勿暴露公网）。
 - **为 strm 库设计**：识别 `.strm` 内容路径并映射到本地镜像，产物写在 strm 树里，Emby 直接捡取，**全程不触碰网盘云端**。
-- **夜窗调度**：只在配置的时段（默认 01:00–07:00）干活，避免与白天观影抢带宽/IO。
+- **夜窗排班**：worker 只在排班窗口内干活。支持统一窗口 + 按周一到周日分日设置（`schedule.windows`，可跨零点、可设某天休息）、每日常用组合的快捷预设；「收尾保护」距窗口结束 N 分钟不再开新集。WebUI 设置页可视化排班，保存即热生效。
 - **无头运行**：单个容器，SQLite 记账，断点续跑。
 
 ## 快速开始
@@ -75,7 +75,7 @@ zhsub scan --config myconfig.yaml
 | `paths.glossary_dir` | 词表库目录：`<剧名>.tmdb<号>.json`，格式见 [`glossaries/README.md`](glossaries/README.md) |
 | `translate.*` | 基础端点（ollama 地址、模型名、批大小、上下文窗口）；`translate.gpu.*` GPU 加速端点（enabled/base_url/model/provider/api_key/num_gpu），启用后优先 GPU、失败回退 |
 | `research.*` | 资料收集：`proxy`（搜索/TMDB 走的 HTTP 代理）、`tmdb_api_key`、搜索后端 |
-| `schedule.window` | 夜窗时段；`last_fire` 最晚开新集时刻；`stuck` 兜底参数 |
+| `schedule.*` | `window` 统一窗口；`windows` 分日覆盖（mon..sun，可跨零点/休息）；`last_fire_min` 收尾保护分钟数 |
 | `web.*` | WebUI 监听地址/端口、是否随启夜窗 worker |
 
 ### 字幕产物命名

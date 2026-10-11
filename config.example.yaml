@@ -62,8 +62,14 @@ translate:
   per_item_budget_min: 60
 
 schedule:
-  window: ["01:00", "07:00"]              # 夜窗；worker 只在窗内干活
-  last_fire: "06:00"                      # 晚于该时刻不再开新集（做完手头为止）
+  window: ["01:00", "07:00"]              # 统一窗口：未在 windows 单独列出的日子用它
+  windows: {}                             # 分日覆盖（mon..sun）；[] = 当天不干活；可跨零点
+  # windows:
+  #   mon: ["01:00", "07:00"]
+  #   fri: ["23:00", "09:00"]             # 跨零点，算周五的班，翻到周六上午 9 点
+  #   sat: ["23:00", "09:00"]
+  #   wed: []                             # 周三休息
+  last_fire_min: 60                       # 距窗口结束 N 分钟不再开新集（0=干满全程；旧 last_fire 已废弃）
   scan_interval_min: 5
   rescanned_hours: 24                     # 候选清单最长复用时长，超时自动重扫
 

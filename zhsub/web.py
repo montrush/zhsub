@@ -8,6 +8,7 @@ import json
 import threading
 import time
 from collections import deque
+from datetime import datetime
 from pathlib import Path
 
 import yaml
@@ -18,6 +19,9 @@ from pydantic import BaseModel
 from . import __version__, glossary, scan as scan_mod, store as store_mod
 from .config import DEFAULTS, load_config
 from .pipeline import Pipeline
+from .scheduler import (DAY_CN, WEEKDAYS, in_window as sched_in_window,
+                        parse_hhmm, parse_days, render_schedule_section,
+                        replace_yaml_section, window_desc)
 
 STATIC = Path(__file__).parent / "static"
 
@@ -267,5 +271,74 @@ def create_app(cfg: dict, cfg_path: str, start_worker: bool = True) -> FastAPI:
         except Exception as e:  # noqa: BLE001
             return {"ok": False, "endpoint": desc, "model": d.get("model"),
                     "error": str(e)[:300]}
+
+    # ---------- 夜窗排班 ----------
+    @app.get("/api/schedule")
+    def api_schedule_get():
+        sch = state["cfg"].get("schedule") or {}
+        days = parse_days(sch)
+        now = datetime.now()
+        today = WEEKDAYS[now.weekday()]
+        default = sch.get("window") or ["01:00", "07:00"]
+        over = sch.get("windows") or {}
+        days_ui = {}
+        for d in WEEKDAYS:
+            raw = over.get(d, default)
+            ok = bool(raw) and len(raw) == 2
+            days_ui[d] = {"enabled": bool(ok),
+                          "start": str(raw[0]) if ok else str(default[0]),
+                          "end": str(raw[1]) if ok else str(default[1])}
+        return {
+            "days": days_ui,
+            "last_fire_min": max(0, int(sch.get("last_fire_min", 60))),
+            "scan_interval_min": int(sch.get("scan_interval_min", 5)),
+            "rescanned_hours": float(sch.get("rescanned_hours", 24)),
+            "today": DAY_CN[today],
+            "today_window": window_desc(days[today]),
+            "in_window": sched_in_window(days, now),
+        }
+
+    class SchedDay(BaseModel):
+        day: str
+        enabled: bool = True
+        start: str = "01:00"
+        end: str = "07:00"
+
+    class SchedReq(BaseModel):
+        days: list[SchedDay]
+        last_fire_min: int = 60
+
+    @app.put("/api/schedule")
+    async def api_schedule_put(req: SchedReq):
+        by_day = {d.day: d for d in req.days}
+        if len(req.days) != 7 or set(by_day) != set(WEEKDAYS):
+            raise HTTPException(400, "需要 mon..sun 恰好七天的排班")
+        days_map = {}
+        try:
+            for d in WEEKDAYS:
+                item = by_day[d]
+                if not item.enabled:
+                    days_map[d] = None
+                    continue
+                s, e = parse_hhmm(item.start), parse_hhmm(item.end)
+                if s == e:
+                    raise ValueError(f"{DAY_CN[d]} 起止时间相同")
+                if s[0] == 24:
+                    raise ValueError(f"{DAY_CN[d]} 开始时间不能是 24:00")
+                days_map[d] = (item.start.strip(), item.end.strip())
+        except ValueError as e:
+            raise HTTPException(400, str(e))
+        block = render_schedule_section(state["cfg"], days_map,
+                                        last_fire_min=max(0, int(req.last_fire_min)))
+        p = Path(state["cfg_path"])
+        new_text = replace_yaml_section(p.read_text(encoding="utf-8"), "schedule", block)
+        tmp = p.with_suffix(".yaml.part")
+        tmp.write_text(new_text, encoding="utf-8")
+        tmp.replace(p)
+        state["cfg"] = load_config(str(p))
+        today = DAY_CN[WEEKDAYS[datetime.now().weekday()]]
+        log(f"[config] 排班已更新并热生效（今天{today}："
+            f"{window_desc(parse_days(state['cfg']['schedule'])[WEEKDAYS[datetime.now().weekday()]])}）")
+        return {"ok": True}
 
     return app
