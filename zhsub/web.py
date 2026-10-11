@@ -60,7 +60,8 @@ def create_app(cfg: dict, cfg_path: str, start_worker: bool = True) -> FastAPI:
     def worker_loop():
         from .scheduler import Worker
         try:
-            Worker(state["cfg"], log=log).run(source="emby")
+            # 传取值函数而非 dict：设置页保存的配置 worker 下一轮即热生效
+            Worker(lambda: state["cfg"], log=log).run(source="emby")
         except Exception as e:  # noqa: BLE001
             log(f"[worker] 线程退出: {e}")
 
@@ -80,12 +81,20 @@ def create_app(cfg: dict, cfg_path: str, start_worker: bool = True) -> FastAPI:
     def status():
         st = store_mod.Store(state["cfg"]["paths"]["data_dir"]).stats()
         latest = scan_mod.load_latest(state["cfg"]["paths"]["data_dir"])
+        t = state["cfg"].get("translate") or {}
+        g = t.get("gpu") or {}
         return {
             "version": __version__,
             "store": st,
             "last_scan": {k: latest[k] for k in ("generated_at", "source", "summary")} if latest else None,
             "glossaries": len(glossary.list_glossaries(state["cfg"]["paths"]["glossary_dir"])),
             "worker_enabled": start_worker,
+            "translate": {
+                "base_url": t.get("base_url"), "model": t.get("model"),
+                "gpu_enabled": bool(g.get("enabled") and g.get("base_url")),
+                "gpu_base_url": g.get("base_url") or "",
+                "gpu_model": g.get("model") or t.get("model") or "",
+            },
         }
 
     @app.get("/api/log")
@@ -185,13 +194,14 @@ def create_app(cfg: dict, cfg_path: str, start_worker: bool = True) -> FastAPI:
 
     # ---------- 配置 ----------
     def _mask(doc, keys=("api_key", "tmdb_api_key")):
-        out = json.loads(json.dumps(doc))
-        for sec in out.values():
-            if isinstance(sec, dict):
-                for k in keys:
-                    if sec.get(k):
-                        sec[k] = "******"
-        return out
+        def rec(o):
+            if isinstance(o, dict):
+                return {k: ("******" if k in keys and v else rec(v))
+                        for k, v in o.items()}
+            if isinstance(o, list):
+                return [rec(x) for x in o]
+            return o
+        return rec(doc)
 
     @app.get("/api/config")
     def cfg_get():
@@ -219,5 +229,43 @@ def create_app(cfg: dict, cfg_path: str, start_worker: bool = True) -> FastAPI:
         state["cfg"] = load_config(str(p))
         log("[config] 配置已更新并热生效")
         return {"ok": True}
+
+    class TestLlmReq(BaseModel):
+        target: str = "gpu"  # gpu | base
+
+    @app.post("/api/test_llm")
+    def api_test_llm(req: TestLlmReq):
+        """向指定端点发一条小对话验证连通性（短超时、不重试）。"""
+        from .translate import endpoint_client
+        t = dict(state["cfg"].get("translate") or {})
+        if req.target == "gpu":
+            g = t.get("gpu") or {}
+            if not (g.get("enabled") and g.get("base_url")):
+                raise HTTPException(400, "GPU 端点未启用或未填 base_url")
+            d = {"base_url": g["base_url"], "model": g.get("model") or t.get("model"),
+                 "provider": g.get("provider", "ollama"),
+                 "api_key": g.get("api_key") or "", "num_gpu": g.get("num_gpu")}
+            desc = f"GPU {d['base_url']}"
+        else:
+            if not t.get("base_url"):
+                raise HTTPException(400, "基础端点未配置 base_url")
+            d = {"base_url": t["base_url"], "model": t.get("model"),
+                 "provider": t.get("provider", "ollama"),
+                 "api_key": t.get("api_key") or "", "num_gpu": t.get("num_gpu")}
+            desc = f"基础 {d['base_url']}"
+        cli = endpoint_client(d, num_ctx=int(t.get("num_ctx", 4096)),
+                              temperature=t.get("temperature", 0.2),
+                              top_p=t.get("top_p", 0.9),
+                              request_timeout=20, max_retries=0,
+                              think=t.get("think"))
+        t0 = time.time()
+        try:
+            reply = cli.chat("你是连通性测试助手", "只回复两个字：正常")
+            return {"ok": True, "endpoint": desc, "model": d["model"],
+                    "latency_ms": int((time.time() - t0) * 1000),
+                    "reply": (reply or "").strip()[:100]}
+        except Exception as e:  # noqa: BLE001
+            return {"ok": False, "endpoint": desc, "model": d.get("model"),
+                    "error": str(e)[:300]}
 
     return app

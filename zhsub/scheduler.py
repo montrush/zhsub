@@ -1,4 +1,8 @@
-"""夜窗 worker：平移 driver v5 的调度策略（窗口/批处理/卡死兜底/每日一扫）。"""
+"""夜窗 worker：平移 driver v5 的调度策略（窗口/批处理/卡死兜底/每日一扫）。
+
+cfg 可以是 dict，也可以是返回 dict 的 callable（WebUI 传入热更新配置的取值函数），
+每轮循环开始时重新取用，设置页保存的配置下一轮即生效。
+"""
 
 import time
 
@@ -14,14 +18,21 @@ def _hhmm(dt=None) -> int:
 
 class Worker:
     def __init__(self, cfg, log=print):
-        self.cfg = cfg
+        self._cfg = cfg
         self.log = log
-        self.pipe = Pipeline(cfg, log=log)
-        sch = cfg["schedule"]
+
+    @property
+    def cfg(self) -> dict:
+        return self._cfg() if callable(self._cfg) else self._cfg
+
+    def _refresh(self):
+        """每轮循环重读配置：夜窗参数 + 流水线（翻译端点等改动即热生效）。"""
+        sch = self.cfg["schedule"]
         self.win = tuple(sch.get("window") or ["01:00", "07:00"])
         self.last_fire = sch.get("last_fire", "06:00")
         self.interval = max(60, int(sch.get("scan_interval_min", 5)) * 60)
         self.max_age = float(sch.get("rescanned_hours", 24))
+        self.pipe = Pipeline(self.cfg, log=self.log)
 
     def in_window(self, hhmm: int = None) -> bool:
         c = _hhmm() if hhmm is None else hhmm
@@ -41,9 +52,11 @@ class Worker:
         return result
 
     def run(self, source: str = "emby", once: bool = False):
+        self._refresh()
         self.log(f"zhsub worker 启动（夜窗 {self.win[0]}–{self.win[1]}，"
                  f"最晚开新集 {self.last_fire}）")
         while True:
+            self._refresh()
             if not self.in_window():
                 if once:
                     self.log("不在夜窗内，退出（--once）")

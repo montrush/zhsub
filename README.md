@@ -28,6 +28,7 @@
 - **翻译前资料收集**：遇到没词表的新剧，先用本地 qwen 联网收集译名资料（TMDB 官方中文数据 + DuckDuckGo 搜索，支持 HTTP 代理配置），自动生成该剧词表再开翻。
 - **词表库**：每剧一个 JSON，按「系列名 + TMDB 号」识别；翻译时注入 system prompt 保证人名/术语一致。老格式平铺词表直接拷入即用。
 - **翻译质量保障**：批次翻译 + 行号对齐 + 单行降级；上下文窗口保持人名/语气连贯；指数退避重试。
+- **GPU 加速端点**：`translate.gpu` 可配第二个推理端点（ollama 原生或 OpenAI 兼容 /v1），优先走 GPU、失败自动回退基础端点（冷却 10 分钟防雪崩）；WebUI 设置页表单配置 + 一键连通性测试。
 - **WebUI**：状态/日志、触发扫描与处理、词表库在线编辑、代理与模型等配置热生效（仅面向家庭内网，无鉴权，勿暴露公网）。
 - **为 strm 库设计**：识别 `.strm` 内容路径并映射到本地镜像，产物写在 strm 树里，Emby 直接捡取，**全程不触碰网盘云端**。
 - **夜窗调度**：只在配置的时段（默认 01:00–07:00）干活，避免与白天观影抢带宽/IO。
@@ -72,7 +73,7 @@ zhsub scan --config myconfig.yaml
 | `paths.path_map` | strm 文件内容路径 → 本地镜像路径的前缀映射 |
 | `paths.emby_path_map` | Emby 条目 Path → 本地路径的前缀映射 |
 | `paths.glossary_dir` | 词表库目录：`<剧名>.tmdb<号>.json`，格式见 [`glossaries/README.md`](glossaries/README.md) |
-| `translate.*` | ollama 地址、模型名、批大小、上下文窗口 |
+| `translate.*` | 基础端点（ollama 地址、模型名、批大小、上下文窗口）；`translate.gpu.*` GPU 加速端点（enabled/base_url/model/provider/api_key/num_gpu），启用后优先 GPU、失败回退 |
 | `research.*` | 资料收集：`proxy`（搜索/TMDB 走的 HTTP 代理）、`tmdb_api_key`、搜索后端 |
 | `schedule.window` | 夜窗时段；`last_fire` 最晚开新集时刻；`stuck` 兜底参数 |
 | `web.*` | WebUI 监听地址/端口、是否随启夜窗 worker |
@@ -97,10 +98,11 @@ Emby 侧零改动。
 ## Roadmap
 
 - [x] WebUI（状态/任务/词表库/配置热生效）
+- [x] GPU 加速端点（translate.gpu：GPU 优先 + 自动回退 + WebUI 表单/连通性测试）
 - [ ] ASR 兜底（PGS 图形轨/无字幕轨，对接 faster-whisper 通路）
 - [x] 联网资料收集 + 词表库（TMDB/搜索，代理可配）
 - [ ] MoviePilot 联动：入库 webhook 即时处理新集（现在靠定时扫描）
-- [ ] 翻译模型/端点多路配置；WebUI 加鉴权选项
+- [ ] WebUI 加鉴权选项
 
 ## License
 

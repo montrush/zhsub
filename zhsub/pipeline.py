@@ -4,7 +4,7 @@ import os
 import time
 
 from . import extract, glossary, paths, probe, srtio, store
-from .translate import BudgetExceeded, Ollama, SubTranslator
+from .translate import BudgetExceeded, SubTranslator, build_client
 
 
 class Pipeline:
@@ -17,12 +17,7 @@ class Pipeline:
     def _translator(self, series: str, tmdb_id=None, deadline: float = None) -> SubTranslator:
         t = self.cfg["translate"]
         terms = glossary.load_glossary(self.cfg["paths"]["glossary_dir"], series, tmdb_id)
-        ai = Ollama(
-            base_url=t["base_url"], model=t["model"], num_ctx=t.get("num_ctx", 4096),
-            temperature=t.get("temperature", 0.2), top_p=t.get("top_p", 0.9),
-            request_timeout=t.get("request_timeout", 180),
-            max_retries=t.get("max_retries", 3), think=t.get("think"),
-        )
+        ai = build_client(t, num_ctx=t.get("num_ctx", 4096), log=self.log)
         return SubTranslator(ai, glossary=terms, batch_size=t.get("batch_size", 10),
                              context_window=t.get("context_window", 2), log=self.log,
                              deadline=deadline)

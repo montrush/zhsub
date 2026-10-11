@@ -82,8 +82,23 @@ textarea{min-height:44vh;font-family:ui-monospace,Consolas,monospace;font-size:1
 </section>
 
 <section id="t-cfg" class="hidden">
+  <div class="card"><h2>GPU 加速端点</h2>
+    <p class="muted">启用后翻译与资料收集优先走 GPU 端点（由 3.88 机器提供），失败自动回退下方基础端点并冷却 10 分钟。保存即热生效，夜窗 worker 下一轮读取。</p>
+    <div class="row"><label style="min-width:120px">启用 GPU 端点</label><input id="gpuEnabled" type="checkbox" style="width:auto"></div>
+    <div class="row"><label>端点地址</label><input id="gpuUrl" placeholder="http://192.168.3.88:11435"></div>
+    <div class="row"><label>模型</label><input id="gpuModel" placeholder="留空 = 用 YAML 里 translate.model"></div>
+    <div class="row"><label>接口类型</label><select id="gpuProvider">
+      <option value="ollama">ollama 原生（/api/chat）</option>
+      <option value="openai">OpenAI 兼容（/v1/chat/completions）</option></select></div>
+    <div class="row"><label>API Key</label><input id="gpuKey" type="password" placeholder="可选，ollama 直连留空"></div>
+    <div class="row"><label>num_gpu</label><input id="gpuNum" type="number" placeholder="ollama GPU 卸载层数，留空=服务端自动"></div>
+    <div class="row"><button class="act" onclick="applyGpu()">应用到配置并保存</button>
+      <button class="ghost" onclick="testLlm('gpu')">测试 GPU 端点</button>
+      <button class="ghost" onclick="testLlm('base')">测试基础端点</button>
+      <span id="gpuTest" class="muted"></span></div>
+  </div>
   <div class="card"><h2>配置（YAML）</h2>
-    <p class="muted">关键项：emby.api_key ｜ translate.base_url / model ｜ research.proxy（联网搜索代理，本机环境用 http://192.168.3.88:10900）｜ research.tmdb_api_key ｜ schedule.window。保存即热生效（worker 线程下一轮读取）。</p>
+    <p class="muted">关键项：emby.api_key ｜ translate.base_url / model ｜ translate.gpu（也可在上面表单改）｜ research.proxy（联网搜索代理，本机环境用 http://192.168.3.88:10900）｜ research.tmdb_api_key ｜ schedule.window。保存即热生效（worker 线程下一轮读取）。</p>
     <textarea id="cfgText" spellcheck="false"></textarea>
     <div class="row"><button class="act" onclick="saveCfg()">保存配置</button><button class="ghost" onclick="loadCfg()">重读</button></div></div>
 </section>
@@ -96,9 +111,11 @@ function switchTab(t,btn){document.querySelectorAll('nav button').forEach(x=>x.c
 ['status','gloss','tasks','cfg'].forEach(x=>$('#t-'+x).classList.toggle('hidden',x!==t));if(t==='status')loadStatus();if(t==='gloss')loadGloss();if(t==='tasks')renderJobs();if(t==='cfg')loadCfg();}
 async function j(url,opt){const r=await fetch(url,opt);if(!r.ok)throw new Error((await r.json().catch(()=>({}))).detail||r.status);return r.json();}
 async function loadStatus(){try{const s=await j('/api/status');
+const tp=s.translate||{};
 $('#stats').innerHTML=`<div><b>${s.store.done}</b><span>累计已处理</span></div>
 <div><b>${s.glossaries}</b><span>词表</span></div>
 <div><b class="${s.worker_enabled?'ok':''}">${s.worker_enabled?'运行中':'未启用'}</b><span>夜窗worker</span></div>
+<div><b class="${tp.gpu_enabled?'ok':''}" title="基础：${tp.base_url||''} → ${tp.model||''}${tp.gpu_enabled?'\nGPU：'+tp.gpu_base_url+' → '+tp.gpu_model:''}">${tp.gpu_enabled?'GPU优先':'基础端点'}</b><span>翻译端点</span></div>
 <div><b>v${s.version}</b><span>版本</span></div>`;
 if(s.last_scan){const sum=s.last_scan.summary;$('#scaninfo').textContent=`最近扫描 ${s.last_scan.generated_at}（${s.last_scan.source}）`;
 $('#scanTable').innerHTML='<table><tr><th>库</th><th>总数</th><th>缺中字</th></tr>'+Object.entries(sum).map(([k,v])=>`<tr><td>${k}</td><td>${v.total}</td><td class="warn">${v.missing}</td></tr>`).join('')+'</table>';}
@@ -123,11 +140,66 @@ $('#gTitle').textContent=curFile+'（新）';$('#gText').value=JSON.stringify({t
 async function saveGloss(){try{const d=JSON.parse($('#gText').value);await j('/api/glossaries/'+encodeURIComponent(curFile),{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(d)});closeGloss();loadGloss();}catch(e){alert('保存失败: '+e);}}
 async function delGloss(){if(!confirm('删除 '+curFile+'？'))return;await j('/api/glossaries/'+encodeURIComponent(curFile),{method:'DELETE'});closeGloss();loadGloss();}
 function closeGloss(){$('#gEditor').style.display='none';curFile=null;}
+// ---- GPU 端点表单：直接读写 YAML 文本里的 translate.gpu 块，保持其余内容/注释不动 ----
+function gpuFromYaml(text){
+  const out={enabled:false,base_url:'',model:'',provider:'ollama',api_key:'',num_gpu:null};
+  let inT=false,inG=false;
+  for(const ln of text.split('\n')){
+    if(/^translate:\s*(#.*)?$/.test(ln)){inT=true;inG=false;continue;}
+    if(inT&&/^\S/.test(ln))inT=false;
+    if(!inT)continue;
+    if(/^ {2}gpu:\s*(#.*)?$/.test(ln)){inG=true;continue;}
+    if(inG&&/^ {2}\S/.test(ln))inG=false;
+    if(!inG)continue;
+    const m=ln.match(/^ {4}([a-z_]+):\s*(.*?)\s*(?:#.*)?$/);
+    if(!m)continue;
+    const v=m[2].replace(/^["']|["']$/g,'');
+    if(m[1]==='enabled')out.enabled=(v==='true');
+    else if(m[1]==='num_gpu')out.num_gpu=(v===''||v==='null')?null:+v;
+    else if(m[1] in out)out[m[1]]=v;
+  }
+  return out;
+}
+function fillGpuForm(g){
+  $('#gpuEnabled').checked=!!g.enabled;$('#gpuUrl').value=g.base_url||'';
+  $('#gpuModel').value=g.model||'';$('#gpuProvider').value=g.provider||'ollama';
+  $('#gpuKey').value=g.api_key||'';
+  $('#gpuNum').value=(g.num_gpu===null||g.num_gpu===undefined||isNaN(g.num_gpu))?'':g.num_gpu;
+}
+function gpuYamlLines(){
+  const num=$('#gpuNum').value===''?null:+$('#gpuNum').value;
+  return ['  gpu:',
+    '    enabled: '+($('#gpuEnabled').checked?'true':'false'),
+    '    base_url: "'+$('#gpuUrl').value.trim()+'"',
+    '    model: "'+$('#gpuModel').value.trim()+'"',
+    '    provider: '+$('#gpuProvider').value,
+    '    api_key: "'+$('#gpuKey').value+'"',
+    '    num_gpu: '+(num===null?'null':num)];
+}
+function applyGpu(){
+  const lines=gpuYamlLines(),out=$('#cfgText').value.split('\n');
+  const ti=out.findIndex(l=>/^translate:\s*(#.*)?$/.test(l));
+  if(ti<0){ // 没有 translate 段就整段追加
+    $('#cfgText').value=$('#cfgText').value.replace(/\s*$/,'')+'\n\ntranslate:\n'+'  gpu:\n'+lines.slice(1).join('\n')+'\n';
+  }else{
+    let te=ti+1;while(te<out.length&&!/^\S/.test(out[te]))te++;
+    let gi=-1;for(let i=ti+1;i<te;i++){if(/^ {2}gpu:\s*(#.*)?$/.test(out[i])){gi=i;break;}}
+    if(gi>=0){let ge=gi+1;while(ge<te&&!/^ {2}\S/.test(out[ge]))ge++;out.splice(gi,ge-gi,...lines);}
+    else out.splice(te,0,...lines);
+    $('#cfgText').value=out.join('\n');
+  }
+  saveCfg(true);
+}
+async function testLlm(target){const el=$('#gpuTest');el.textContent='测试中…';
+try{const r=await j('/api/test_llm',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({target})});
+el.innerHTML=r.ok?`<span class="ok">✓ ${r.endpoint}（${r.model}）${r.latency_ms}ms「${(r.reply||'').slice(0,20)}」</span>`
+:`<span class="err">✗ ${r.endpoint}: ${r.error}</span>`;}
+catch(e){el.innerHTML=`<span class="err">✗ ${e}</span>`;}}
 async function loadCfg(){const c=await j('/api/config');const raw=await(await fetch('/api/config_raw')).text();
-$('#cfgText').value='# 配置文件: '+c.path+'\n\n'+raw;}
-async function saveCfg(){const r=await fetch('/api/config',{method:'PUT',headers:{'Content-Type':'application/json'},
+$('#cfgText').value='# 配置文件: '+c.path+'\n\n'+raw;fillGpuForm(gpuFromYaml(raw));}
+async function saveCfg(silent){const r=await fetch('/api/config',{method:'PUT',headers:{'Content-Type':'application/json'},
 body:JSON.stringify({text:$('#cfgText').value})});
-if(r.ok){alert('已保存，热生效');}else{alert('失败: '+(await r.json()).detail);}}
+if(r.ok){if(!silent)alert('已保存，热生效');loadCfg();}else{alert('失败: '+(await r.json()).detail);}}
 setInterval(poll,2000);poll();loadStatus();
 </script>
 </body>

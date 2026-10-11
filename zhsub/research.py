@@ -15,7 +15,7 @@ import time
 import requests
 
 from .glossary import find_glossary, save_glossary
-from .translate import Ollama
+from .translate import build_client
 
 UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124 Safari/537.36"
 
@@ -145,12 +145,8 @@ class Researcher:
         self.proxy = r.get("proxy") or ""
         self.tmdb_key = r.get("tmdb_api_key") or ""
         self.max_rounds = int(r.get("max_rounds", 6))
-        self.ai = Ollama(
-            base_url=t["base_url"], model=t["model"],
-            num_ctx=int(r.get("num_ctx", 8192)),
-            temperature=t.get("temperature", 0.2), top_p=t.get("top_p", 0.9),
-            request_timeout=t.get("request_timeout", 180),
-            max_retries=t.get("max_retries", 3), think=t.get("think"),
+        self.ai = build_client(
+            t, num_ctx=int(r.get("num_ctx", 8192)), log=self.log,
         )
 
     def collect(self, series: str, tmdb_id=None, force: bool = False):

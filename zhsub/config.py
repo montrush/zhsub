@@ -29,6 +29,17 @@ DEFAULTS = {
         "provider": "ollama",
         "base_url": "http://127.0.0.1:11434",
         "model": "qwen3-8b-translate",
+        "api_key": "",        # 带鉴权的网关用；ollama 留空
+        "num_gpu": None,      # ollama GPU 卸载层数；None=服务端自动
+        # GPU 加速端点：启用后翻译/资料收集优先走它，失败自动回退 base_url
+        "gpu": {
+            "enabled": False,
+            "base_url": "",        # 如 http://192.168.3.88:11435
+            "model": "",           # 留空 = 用上面的 model
+            "provider": "ollama",  # ollama | openai（OpenAI 兼容 /v1/chat/completions）
+            "api_key": "",
+            "num_gpu": None,
+        },
         "num_ctx": 4096,
         "batch_size": 10,
         "context_window": 2,

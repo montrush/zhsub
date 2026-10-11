@@ -3,6 +3,9 @@
 策略平移自实战验证的 AutoSubv2 补丁（v3/__init__.py 的 __process_batch 系列）与
 openai_translate.py 的 prompt，改进点：批次内每行带编号，按编号对齐，
 不再依赖"按换行拆分数组"这种对空行敏感的做法。
+
+端点：默认 ollama 原生协议；translate.gpu 可配 GPU 加速端点（ollama 或
+OpenAI 兼容），启用后优先走 GPU，失败自动回退 base_url。
 """
 
 import random
@@ -46,11 +49,26 @@ class BudgetExceeded(RuntimeError):
     pass
 
 
+def _post_json(url: str, payload: dict, timeout: int, max_retries: int, headers=None) -> dict:
+    """POST JSON 并指数退避重试，返回解析后的响应。"""
+    last_err = None
+    for attempt in range(max_retries + 1):
+        try:
+            r = requests.post(url, json=payload, timeout=timeout, headers=headers)
+            r.raise_for_status()
+            return r.json()
+        except Exception as e:  # noqa: BLE001 - 网络与服务端错误统一退避重试
+            last_err = e
+            if attempt < max_retries:
+                time.sleep(2 ** attempt + random.uniform(0.1, 0.9))
+    raise RuntimeError(f"{url} 调用失败（已重试 {max_retries} 次）: {last_err}")
+
+
 class Ollama:
     def __init__(self, base_url: str, model: str, num_ctx: int = 4096,
                  temperature: float = 0.2, top_p: float = 0.9,
                  request_timeout: int = 180, max_retries: int = 3,
-                 think: bool = None):
+                 think: bool = None, num_gpu: int = None, api_key: str = ""):
         self.base = base_url.rstrip("/")
         self.model = model
         self.num_ctx = num_ctx
@@ -59,6 +77,8 @@ class Ollama:
         self.timeout = request_timeout
         self.max_retries = max_retries
         self.think = think  # None=跟随模型默认；False=关闭 qwen3 思考（ollama ≥0.9）
+        self.num_gpu = num_gpu  # GPU 卸载层数；None=服务端自动
+        self.headers = {"Authorization": f"Bearer {api_key}"} if api_key else None
 
     def chat(self, system: str, user: str) -> str:
         return self.chat_messages([
@@ -80,17 +100,119 @@ class Ollama:
         }
         if self.think is not None:
             payload["think"] = self.think
-        last_err = None
-        for attempt in range(self.max_retries + 1):
+        if self.num_gpu is not None:
+            payload["options"]["num_gpu"] = int(self.num_gpu)
+        data = _post_json(f"{self.base}/api/chat", payload, self.timeout,
+                          self.max_retries, self.headers)
+        return data["message"]["content"]
+
+
+class OpenAICompat:
+    """OpenAI 兼容端点（/v1/chat/completions）：vLLM、llama.cpp server、ollama /v1 等。
+
+    接口与 Ollama 对齐（chat / chat_messages）；num_ctx / num_gpu / think 是
+    ollama 概念，OpenAI 协议无对应字段，收下但忽略。
+    """
+
+    def __init__(self, base_url: str, model: str, num_ctx: int = None,
+                 temperature: float = 0.2, top_p: float = 0.9,
+                 request_timeout: int = 180, max_retries: int = 3,
+                 think: bool = None, num_gpu: int = None, api_key: str = ""):
+        self.base = base_url.rstrip("/")
+        self.model = model
+        self.temperature = temperature
+        self.top_p = top_p
+        self.timeout = request_timeout
+        self.max_retries = max_retries
+        self.headers = {"Authorization": f"Bearer {api_key}"} if api_key else None
+
+    def chat(self, system: str, user: str) -> str:
+        return self.chat_messages([
+            {"role": "system", "content": system},
+            {"role": "user", "content": user},
+        ])
+
+    def chat_messages(self, messages) -> str:
+        payload = {
+            "model": self.model,
+            "messages": messages,
+            "stream": False,
+            "temperature": self.temperature,
+            "top_p": self.top_p,
+        }
+        data = _post_json(f"{self.base}/v1/chat/completions", payload, self.timeout,
+                          self.max_retries, self.headers)
+        try:
+            return data["choices"][0]["message"]["content"] or ""
+        except (KeyError, IndexError, TypeError) as e:
+            raise RuntimeError(f"OpenAI 兼容端点返回异常: {e}（响应片段: {str(data)[:200]}）")
+
+
+class GpuFallback:
+    """GPU 端点优先、失败自动回退基础端点的聊天客户端。
+
+    GPU 连续失败后进入冷却期（默认 10 分钟），期间直接走基础端点，
+    避免每批字幕都先吃一遍超时；冷却结束后自动重试 GPU。
+    """
+
+    def __init__(self, primary, fallback, log=print, cooldown_sec: int = 600):
+        self.primary = primary
+        self.fallback = fallback
+        self.log = log
+        self.cooldown_sec = cooldown_sec
+        self.stats = {"gpu_ok": 0, "fallback": 0}
+        self._down_until = 0.0
+
+    def chat(self, system: str, user: str) -> str:
+        return self.chat_messages([
+            {"role": "system", "content": system},
+            {"role": "user", "content": user},
+        ])
+
+    def chat_messages(self, messages) -> str:
+        if time.time() >= self._down_until:
             try:
-                r = requests.post(f"{self.base}/api/chat", json=payload, timeout=self.timeout)
-                r.raise_for_status()
-                return r.json()["message"]["content"]
-            except Exception as e:  # noqa: BLE001 - 网络与服务端错误统一退避重试
-                last_err = e
-                if attempt < self.max_retries:
-                    time.sleep(2 ** attempt + random.uniform(0.1, 0.9))
-        raise RuntimeError(f"ollama 调用失败（已重试 {self.max_retries} 次）: {last_err}")
+                out = self.primary.chat_messages(messages)
+                self.stats["gpu_ok"] += 1
+                return out
+            except Exception as e:  # noqa: BLE001
+                self._down_until = time.time() + self.cooldown_sec
+                self.log(f"[gpu] GPU 端点失败，冷却 {self.cooldown_sec // 60} 分钟，"
+                         f"期间走基础端点: {e}")
+        self.stats["fallback"] += 1
+        return self.fallback.chat_messages(messages)
+
+
+def endpoint_client(d: dict, num_ctx: int, temperature: float = 0.2,
+                    top_p: float = 0.9, request_timeout: int = 180,
+                    max_retries: int = 3, think: bool = None):
+    """按端点描述构造单端点客户端。d: {base_url, model, provider, api_key, num_gpu}"""
+    cls = OpenAICompat if d.get("provider") == "openai" else Ollama
+    return cls(base_url=d["base_url"], model=d["model"], num_ctx=num_ctx,
+               temperature=temperature, top_p=top_p,
+               request_timeout=request_timeout, max_retries=max_retries,
+               think=think, api_key=d.get("api_key") or "",
+               num_gpu=d.get("num_gpu"))
+
+
+def build_client(t: dict, num_ctx: int, log=print):
+    """按 translate 配置构造聊天客户端；gpu.enabled 时 GPU 优先 + base_url 回退。"""
+    kw = dict(temperature=t.get("temperature", 0.2), top_p=t.get("top_p", 0.9),
+              request_timeout=t.get("request_timeout", 180),
+              max_retries=t.get("max_retries", 3), think=t.get("think"))
+    base = endpoint_client({"base_url": t["base_url"], "model": t["model"],
+                            "provider": t.get("provider", "ollama"),
+                            "api_key": t.get("api_key") or "",
+                            "num_gpu": t.get("num_gpu")}, num_ctx, **kw)
+    g = t.get("gpu") or {}
+    if g.get("enabled") and g.get("base_url"):
+        gpu = endpoint_client({"base_url": g["base_url"],
+                               "model": g.get("model") or t["model"],
+                               "provider": g.get("provider", "ollama"),
+                               "api_key": g.get("api_key") or "",
+                               "num_gpu": g.get("num_gpu")}, num_ctx, **kw)
+        return GpuFallback(gpu, base, log=log)
+    return base
 
 
 def parse_numbered_reply(reply: str, n: int):
@@ -111,7 +233,7 @@ def parse_numbered_reply(reply: str, n: int):
 
 
 class SubTranslator:
-    def __init__(self, ollama: Ollama, glossary: dict = None,
+    def __init__(self, ollama, glossary: dict = None,
                  batch_size: int = 10, context_window: int = 2, log=print,
                  deadline: float = None):
         self.ai = ollama

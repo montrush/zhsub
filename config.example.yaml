@@ -38,8 +38,18 @@ detect:
 
 translate:
   provider: ollama
-  base_url: http://192.168.1.20:11434     # ollama 地址
+  base_url: http://192.168.1.20:11434     # ollama 地址（基础端点）
   model: qwen3-8b-translate
+  api_key: ""                             # 带鉴权的网关用；ollama 留空
+  num_gpu: null                           # ollama GPU 卸载层数；null=服务端自动
+  # GPU 加速端点：启用后翻译/资料收集优先走它，失败自动回退上面的 base_url（冷却 10 分钟）
+  gpu:
+    enabled: false
+    base_url: ""                          # 如 http://192.168.1.88:11435（也可 OpenAI 兼容端点）
+    model: ""                             # 留空 = 用上面的 model
+    provider: ollama                      # ollama | openai（OpenAI 兼容 /v1/chat/completions）
+    api_key: ""                           # provider=openai 时常用；ollama 直连留空
+    num_gpu: null
   num_ctx: 4096                           # 限制 KV 上下文，防 ollama 默认大分配挤占显存
   batch_size: 10                          # 批翻译行数；对不齐自动降级单行
   context_window: 2                       # 每批附带的上下文原文行数（前后各 N 行）
