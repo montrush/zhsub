@@ -1,10 +1,21 @@
 """单集处理流水线：探针选轨 → 抽取(中文) / 翻译(外文) → 写字幕文件 → 记账。"""
 
+import hashlib
 import os
 import time
+from datetime import datetime
 
 from . import extract, glossary, paths, probe, srtio, store
 from .translate import BudgetExceeded, SubTranslator, build_client
+
+
+def _within_hours(ts: str, hours: float) -> bool:
+    """'YYYY-MM-DD HH:MM:SS' 是否在最近 hours 小时内（解析失败按不久前处理）。"""
+    try:
+        t = datetime.strptime(ts, "%Y-%m-%d %H:%M:%S")
+    except (TypeError, ValueError):
+        return True
+    return (datetime.now() - t).total_seconds() < hours * 3600
 
 
 class Pipeline:
@@ -20,7 +31,8 @@ class Pipeline:
         ai = build_client(t, num_ctx=t.get("num_ctx", 4096), log=self.log)
         return SubTranslator(ai, glossary=terms, batch_size=t.get("batch_size", 10),
                              context_window=t.get("context_window", 2), log=self.log,
-                             deadline=deadline)
+                             deadline=deadline,
+                             batch_retries=t.get("batch_retries", 3))
 
     def _media_mtime(self, local_path: str, media: str) -> float:
         for p in (media, local_path):
@@ -76,6 +88,14 @@ class Pipeline:
             self.store.mark(local_path, mtime, "already", extract_out if os.path.exists(extract_out) else ai_out, 0, 0)
             return {"status": "skip", "kind": "already", "out": "", "detail": "已有中文字幕"}
 
+        # 失败冷却：探测/翻译类失败 N 小时内不重试（媒体缺失例外——文件一出现就该重试）
+        retry_hours = float(self.cfg["detect"].get("fail_retry_hours", 24))
+        if retry_hours > 0:
+            last = self.store.last_retryable_fail(local_path)
+            if last and _within_hours(last[0], retry_hours):
+                return {"status": "skip", "kind": "recent_fail", "out": "",
+                        "detail": f"{last[0]} 失败过（{last[1][:60]}），冷却中"}
+
         streams = probe.ffprobe_streams(media)
         if streams is None:
             reason = "ffprobe 失败（文件损坏或挂载不可读）"
@@ -117,12 +137,19 @@ class Pipeline:
                 translator = self._translator(series, item.get("tmdb_id"),
                                               deadline=deadline)
                 lines = [w[1] for w in work]
+                # 断点续跑：按批落盘已译行（中断/预算杀死后重跑不浪费）
+                ckpt_path = os.path.join(
+                    self.cfg["paths"]["data_dir"], "ckpt",
+                    hashlib.sha1(local_path.encode("utf-8")).hexdigest()[:16] + ".json")
+                os.makedirs(os.path.dirname(ckpt_path), exist_ok=True)
 
                 def guard(done_n, total_n):
                     if time.time() > deadline:
                         raise BudgetExceeded(f"超过单集预算 {budget_min} 分钟")
 
-                translated = translator.translate_lines(lines, progress=guard)
+                translated = translator.translate_lines(lines, progress=guard,
+                                                         ckpt_path=ckpt_path,
+                                                         ckpt_meta=mtime)
                 for (cue, _), zh in zip(work, translated):
                     cue.set_line(zh)
                 tmp_out = ai_out + ".part"
@@ -132,8 +159,13 @@ class Pipeline:
                 st = translator.stats
                 self.store.mark(local_path, mtime, "translate", ai_out, len(lines),
                                 time.time() - t0)
+                try:
+                    os.remove(ckpt_path)
+                except OSError:
+                    pass
                 self.log(f"[translate] {os.path.basename(local_path)} "
-                         f"{len(lines)}行 / 批{st['batch_ok']} 单行{st['single_fallback']} "
+                         f"{len(lines)}行 / 批{st['batch_ok']} 修复{st['repair_ok']} "
+                         f"重试{st['retry_ok']} 单行{st['single_fallback']} "
                          f"/ {time.time()-t0:.0f}s ← 轨#{foreign[0]}({foreign[1]})")
                 return {"status": "done", "kind": "translate", "out": ai_out,
                         "detail": f"{len(lines)} 行"}

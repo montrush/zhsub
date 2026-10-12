@@ -35,6 +35,12 @@ detect:
   min_extract_bytes: 2000
   # 跳过这些系列（不补中字），填系列名/目录名精确匹配
   exclude_series: []
+  # 扫描分类：先用 Emby 已扫到的 MediaStreams 判定（零探测成本），
+  # Emby 没扫过流信息的条目才并发 ffprobe 兜底，这里控制并发数
+  probe_workers: 4
+  # 探测/翻译类失败的冷却时长（小时）：冷却期内同一条目不再重试；
+  # 「媒体文件不存在」不受此限（文件一出现就该重试）。0=不冷却
+  fail_retry_hours: 24
 
 translate:
   provider: ollama
@@ -53,13 +59,14 @@ translate:
   num_ctx: 4096                           # 限制 KV 上下文，防 ollama 默认大分配挤占显存
   batch_size: 10                          # 批翻译行数；对不齐自动降级单行
   context_window: 2                       # 每批附带的上下文原文行数（前后各 N 行）
+  batch_retries: 3                        # 批次对齐失败重试次数（先位置修复兜底，仍不齐才降级单行）
   temperature: 0.2
   top_p: 0.9
   max_retries: 3
   request_timeout: 180
-  think: null                            # qwen3 微调翻译模型勿关思考（会偶发空回复）；普通模型可设 false 省时间
-  # 单集总时长预算（分钟），超时中止并记失败
-  per_item_budget_min: 60
+  think: false                            # 默认关：qwen3 混合模型不关思考时单行也生成~300tok（1012实测整集慢5-10×）；偶发空回复由客户端reasoning兜底+批次重试覆盖
+  # 单集总时长预算（分钟），超时中止并记失败（提速后单集通常<10min）
+  per_item_budget_min: 30
 
 schedule:
   window: ["01:00", "07:00"]              # 统一窗口：未在 windows 单独列出的日子用它

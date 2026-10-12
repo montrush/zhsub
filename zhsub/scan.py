@@ -1,8 +1,13 @@
-"""候选清单生成：Emby 扫描（媒体库感知）或纯文件系统扫描。"""
+"""候选清单生成：Emby 扫描（媒体库感知）或纯文件系统扫描。
+
+分类优先级：Emby MediaStreams 能看到字幕轨 → 直接 classify（零探测成本）；
+流信息缺失（Emby 未扫过）→ 并发 ffprobe 兜底（detect.probe_workers）。
+"""
 
 import json
 import os
 import time
+from concurrent.futures import ThreadPoolExecutor
 
 from . import emby as emby_mod
 from . import paths, probe
@@ -61,6 +66,8 @@ def scan(cfg, source: str = "emby", do_probe: bool = False, probe_limit: int = 0
                 missing += 1
                 tmdb = tmdb_map.get(str(it.get("SeriesId") or "")) or \
                     _int_tmdb((it.get("ProviderIds") or {}).get("Tmdb"))
+                # Emby 已扫出流信息 → 现场分类；没扫过（None）→ 留给 ffprobe 兜底
+                tracks = emby_mod.stream_tracks(it)
                 items.append({
                     "item_id": it.get("Id"),
                     "type": it.get("Type"),
@@ -69,6 +76,7 @@ def scan(cfg, source: str = "emby", do_probe: bool = False, probe_limit: int = 0
                     "tmdb_id": tmdb,
                     "emby_path": raw_path,
                     "local_path": local,
+                    "kind": probe.classify(tracks) if tracks is not None else None,
                 })
             summary[str(lib)] = {"total": total, "missing": missing, "unresolved": unresolved}
     else:
@@ -96,16 +104,7 @@ def scan(cfg, source: str = "emby", do_probe: bool = False, probe_limit: int = 0
                     })
             summary[str(root)] = {"total": total, "missing": missing, "unresolved": 0}
 
-    probed = 0
-    for it in items:
-        it["kind"] = "unprobed"
-        if do_probe and (probe_limit <= 0 or probed < probe_limit):
-            media = paths.resolve_media(it["local_path"], cfg["paths"]["path_map"])
-            streams = probe.ffprobe_streams(media) if media and os.path.exists(media) else None
-            it["kind"] = probe.classify(probe.subtitle_tracks(streams)) if streams else "probe_failed"
-            probed += 1
-        it["mtime"] = os.path.getmtime(it["local_path"])
-
+    _probe_pending(items, cfg, do_probe, probe_limit, log)
     items.sort(key=lambda x: x.get("mtime") or 0, reverse=True)
     return {
         "generated_at": time.strftime("%F %T"),
@@ -114,6 +113,42 @@ def scan(cfg, source: str = "emby", do_probe: bool = False, probe_limit: int = 0
         "summary": summary,
         "items": items,
     }
+
+
+def _probe_pending(items, cfg, do_probe: bool, probe_limit: int, log=print):
+    """给 kind 未定的条目补分类：并发 ffprobe（受 probe_limit 约束），其余标 unprobed。"""
+    for it in items:
+        it.setdefault("kind", None)
+        it["mtime"] = os.path.getmtime(it["local_path"])
+    if not do_probe:
+        for it in items:
+            if it["kind"] is None:
+                it["kind"] = "unprobed"
+        return
+    pending = [it for it in items if it["kind"] is None]
+    limit = len(pending) if probe_limit <= 0 else min(probe_limit, len(pending))
+    todo, rest = pending[:limit], pending[limit:]
+    for it in rest:
+        it["kind"] = "unprobed"
+    if not todo:
+        return
+    workers = max(1, int(cfg["detect"].get("probe_workers") or 4))
+    log(f"ffprobe 预判 {len(todo)} 条（{workers} 并发，Emby 元数据已先行分类其余条目）...")
+
+    def run(it):
+        try:
+            media = paths.resolve_media(it["local_path"], cfg["paths"]["path_map"])
+            streams = probe.ffprobe_streams(media) if media and os.path.exists(media) else None
+            it["kind"] = probe.classify(probe.subtitle_tracks(streams)) if streams else "probe_failed"
+        except Exception:  # noqa: BLE001 - 单条失败不拖垮整个扫描
+            it["kind"] = "probe_failed"
+
+    if workers == 1:
+        for it in todo:
+            run(it)
+        return
+    with ThreadPoolExecutor(max_workers=workers) as ex:
+        list(ex.map(run, todo))
 
 
 def save(result: dict, data_dir: str, out: str = None) -> str:

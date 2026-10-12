@@ -2,8 +2,18 @@
 
 import requests
 
+from .probe import TEXT_CODECS
+
 ZH_LANG_PREFIX = "zh"
 ZH_LANG_CODES = {"chi", "zho"}
+
+# Emby 与 ffprobe 对图形字幕轨的编码名不一致，统一到 ffprobe 命名
+_EMBY_CODEC_MAP = {
+    "pgssub": "hdmv_pgs_subtitle",
+    "pgs": "hdmv_pgs_subtitle",
+    "dvdsub": "dvd_subtitle",
+    "dvbsub": "dvb_subtitle",
+}
 
 
 class Emby:
@@ -93,3 +103,28 @@ def has_zh_streams(item: dict) -> bool:
         if s.get("Type") == "Subtitle" and _stream_is_zh(s):
             return True
     return False
+
+
+def stream_tracks(item: dict):
+    """MediaStreams → probe.classify 可用的轨道元组 [(index, lang, title, codec, is_text)]。
+
+    Emby 没扫出流信息时返回 None（调用方需回退 ffprobe）；扫过但确实无字幕轨
+    则返回空列表（可直接判 none，不必再探测）。
+    """
+    streams = item.get("MediaStreams")
+    if not streams:
+        return None
+    tracks = []
+    for s in streams:
+        if s.get("Type") != "Subtitle":
+            continue
+        codec = (s.get("Codec") or "").lower()
+        codec = _EMBY_CODEC_MAP.get(codec, codec)
+        tracks.append((
+            int(s.get("Index") or -1),
+            (s.get("Language") or "").lower(),
+            s.get("Title") or s.get("DisplayTitle") or "",
+            codec,
+            codec in TEXT_CODECS,
+        ))
+    return tracks

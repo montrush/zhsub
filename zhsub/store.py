@@ -54,11 +54,28 @@ class Store:
 
     def fail(self, path: str, reason: str):
         with self._lock:
-            self.db.execute(
-                "INSERT INTO failures VALUES(?,?,?)",
-                (path, reason[:500], time.strftime("%F %T")),
-            )
+            now = time.strftime("%F %T")
+            row = self.db.execute(
+                "SELECT reason FROM failures WHERE path=? AND ts>=? "
+                "ORDER BY rowid DESC LIMIT 1",
+                (path, now[:13] + ":00"),
+            ).fetchone()
+            if row and row[0] == reason[:500]:
+                return  # 同一小时内同原因失败只记一次，别让失败表无限膨胀
+            self.db.execute("INSERT INTO failures VALUES(?,?,?)",
+                            (path, reason[:500], now))
             self.db.commit()
+
+    def last_retryable_fail(self, path: str):
+        """最近一次「值得冷却后再试」的失败 (ts, reason)；媒体缺失不算（文件一出现就该重试）。"""
+        with self._lock:
+            row = self.db.execute(
+                "SELECT ts, reason FROM failures WHERE path=? "
+                "AND reason NOT LIKE '媒体文件不存在%' "
+                "ORDER BY rowid DESC LIMIT 1",
+                (path,),
+            ).fetchone()
+        return row
 
     def stats(self):
         with self._lock:

@@ -24,6 +24,8 @@ DEFAULTS = {
         "zh_markers": ["zh", "chi", "chs", "cht", "zho", ".cn."],
         "min_extract_bytes": 2000,
         "exclude_series": [],
+        "probe_workers": 4,     # 扫描兜底 ffprobe 的并发数（Emby 元数据先行分类，探测只兜底）
+        "fail_retry_hours": 24, # 探测/翻译类失败的冷却时长（小时），0=不冷却
     },
     "translate": {
         "provider": "ollama",
@@ -48,8 +50,13 @@ DEFAULTS = {
         "max_retries": 3,
         "request_timeout": 180,
         "per_item_budget_min": 60,
-        # qwen3-8b-translate 微调模型的思考是训练的一部分：think=false 会导致偶发空回复（2026-10-11 夜实测），保持 null
-        "think": None,
+        # 单次生成 token 上限；None=不设。批翻译 10 行+语境远用不满 2048，
+        # 设上限防止模型偶发跑飞（无限循环生成）占死 GPU 队列（2026-10-12 夜译实测）
+        "num_predict": 2048,
+        # 1012 改默认 False：不关思考时 qwen3 单行字幕也生成 ~300 token（实测 316 vs 正常
+        # ~25，整集慢 5-10×）。此前 think=false 偶发空回复（1011 实测）已由客户端
+        # reasoning 字段兜底 + 批次重试 + 位置对齐修复覆盖。显式设 null = 跟随模型默认。
+        "think": False,
     },
     "schedule": {
         "window": ["01:00", "07:00"],

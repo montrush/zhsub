@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "zhsub"
-version = "0.3.1"
+version = "0.4.0"
 description = "夜译 zhsub —— 给家庭媒体库自动补齐中文字幕的无头服务 / Fill missing Chinese subtitles for your home media library (Emby scan + embedded extract + local LLM translate)"
 readme = "README.md"
 requires-python = ">=3.9"
