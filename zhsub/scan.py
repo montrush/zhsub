@@ -53,11 +53,12 @@ def _category_ok(it_type: str, local: str, category: str) -> bool:
 
 
 def scan(cfg, source: str = "emby", do_probe: bool = False, probe_limit: int = 0,
-         path: str = None, category: str = None, log=print) -> dict:
+         path: str = None, category: str = None, library: str = None, log=print) -> dict:
     """返回 {generated_at, source, summary, items}；items 仅含缺中字条目，按 mtime 新→旧。
 
     path: 只扫该目录（本地路径或 emby 路径前缀均可命中），如单扫地狱厨房；
-    category: 'series' 只扫剧集 / 'movies' 只扫电影（emby Type 或 Season 目录启发）。"""
+    category: 'series' 只扫剧集 / 'movies' 只扫电影（emby Type 或 Season 目录启发）；
+    library: 只扫指定 emby 媒体库（配置中的库名精确匹配，如 '电视剧115'/'电影'）。"""
     markers = cfg["detect"]["zh_markers"]
     items = []
     summary = {}
@@ -66,6 +67,8 @@ def scan(cfg, source: str = "emby", do_probe: bool = False, probe_limit: int = 0
         emb = emby_mod.Emby(cfg["emby"]["base_url"], cfg["emby"]["api_key"],
                             timeout=cfg["emby"].get("timeout", 30))
         for lib in cfg["emby"]["libraries"]:
+            if library and lib != library:
+                continue
             lib_id = emb.resolve_library_id(lib)
             total = missing = unresolved = 0
             series_ids = set()

@@ -24,7 +24,7 @@ from .translate import Ollama, SubTranslator
 def cmd_scan(cfg, args):
     result = scan_mod.scan(cfg, source=args.source, do_probe=args.probe,
                            probe_limit=args.probe_limit, path=args.path,
-                           category=args.category, log=print)
+                           category=args.category, library=args.library, log=print)
     out = scan_mod.save(result, cfg["paths"]["data_dir"], args.out)
     print(f"\n=== 扫描结果（source={result['source']}，{result['generated_at']}）===")
     for lib, s in result["summary"].items():
@@ -144,6 +144,7 @@ def main(argv=None):
 
     sp = sub.add_parser("scan", help="扫描缺中字条目（手动；可限定目录/类别）")
     sp.add_argument("--source", choices=["emby", "fs"], default="emby")
+    sp.add_argument("--library", help="只扫指定 emby 媒体库（库名精确匹配，如 电视剧115/电影）")
     sp.add_argument("--path", help="只扫该目录（本地或 emby 路径前缀），如单扫地狱厨房")
     sp.add_argument("--category", choices=["series", "movies"],
                     help="只扫剧集(series)或电影(movies)")

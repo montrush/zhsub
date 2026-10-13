@@ -118,21 +118,24 @@ def create_app(cfg: dict, cfg_path: str, start_worker: bool = True) -> FastAPI:
         source: str = "emby"
         probe: bool = True
         probe_limit: int = 300
+        library: str = None      # ⭐1013: 只扫指定emby媒体库(库名精确匹配)
         path: str = None        # ⭐1013: 范围扫描——只扫该目录(如单扫地狱厨房)
         category: str = None    # 'series' / 'movies' 单扫剧集或电影
 
     @app.post("/api/scan")
     def api_scan(req: ScanReq):
-        def run(source, probe, probe_limit, path, category):
-            log(f"手动扫描：source={source} path={path or '全库'} category={category or '全部'}")
+        def run(source, probe, probe_limit, library, path, category):
+            log(f"手动扫描：source={source} library={library or '全部库'} "
+                f"path={path or '全库'} category={category or '全部'}")
             r = scan_mod.scan(state["cfg"], source=source, do_probe=probe,
-                              probe_limit=probe_limit, path=path, category=category, log=log)
+                              probe_limit=probe_limit, path=path, category=category,
+                              library=library, log=log)
             path_out = scan_mod.save(r, state["cfg"]["paths"]["data_dir"])
             miss = sum(s.get("missing", 0) for s in r["summary"].values())
             return {"missing": miss, "summary": r["summary"], "file": path_out}
         return {"job": spawn("scan", run, source=req.source, probe=req.probe,
-                             probe_limit=req.probe_limit, path=req.path,
-                             category=req.category)}
+                             probe_limit=req.probe_limit, library=req.library,
+                             path=req.path, category=req.category)}
 
     class RunReq(BaseModel):
         limit: int = 5
