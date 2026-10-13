@@ -174,6 +174,17 @@ class Worker:
         if cached:
             self.log(f"使用缓存清单（{cached.get('generated_at')}，{len(cached['items'])} 条）")
             return cached
+        # ⭐1013用户令"停自动扫库": scan.auto=false → worker 永不主动全库重扫（云端
+        # ffprobe 17k 条要数小时吃光窗口）；用过期清单兜底，无清单则空转等手动扫描
+        # （WebUI 扫描按钮 / CLI `zhsub scan [--path 目录] [--category series|movies]`）。
+        if not (self.cfg.get("scan") or {}).get("auto", True):
+            stale = scan_mod.load_latest(self.cfg["paths"]["data_dir"], None)
+            if stale:
+                self.log(f"自动扫描已关（scan.auto=false），沿用旧清单"
+                         f"（{stale.get('generated_at')}，{len(stale.get('items', []))} 条）")
+                return stale
+            self.log("自动扫描已关且无清单：等待手动扫描（WebUI 扫描 / zhsub scan）")
+            return {"items": [], "summary": {}}
         self.log(f"扫描生成候选清单（source={source}）...")
         result = scan_mod.scan(self.cfg, source=source, do_probe=True, log=self.log)
         path = scan_mod.save(result, self.cfg["paths"]["data_dir"])

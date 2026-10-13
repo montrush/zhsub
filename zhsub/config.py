@@ -6,6 +6,11 @@ import os
 import yaml
 
 DEFAULTS = {
+    # ⭐1013用户令"停自动扫库": auto=false → worker 不再自动全库重扫（云端媒体 ffprobe
+    # 全库一次数小时，吃光翻译窗口）；改用 WebUI/CLI 手动扫描产物，过期清单仍可用。
+    "scan": {
+        "auto": True,  # false = 手动扫描模式（默认保留原行为）
+    },
     "emby": {
         "base_url": "http://127.0.0.1:8096",
         "api_key": "",

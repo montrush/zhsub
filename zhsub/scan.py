@@ -31,9 +31,33 @@ def _excluded(cfg, name) -> bool:
     return name in set(cfg["detect"].get("exclude_series") or [])
 
 
+def _path_in(local: str, raw_path: str, path: str) -> bool:
+    """范围过滤：本地映射路径或 emby 原始路径任一命中前缀即可（容器内路径/挂载路径都好使）。"""
+    p = (path or "").rstrip("/").rstrip("\\")
+    if not p:
+        return True
+    return local.startswith(p) or (raw_path or "").startswith(p) \
+        or local.replace("\\", "/").startswith(p.replace("\\", "/"))
+
+
+def _category_ok(it_type: str, local: str, category: str) -> bool:
+    """范围过滤：series=剧集(Season 目录/emby Episode)；movies=电影。None=不过滤。"""
+    if not category:
+        return True
+    season_dir = "season" in os.path.basename(os.path.dirname(local)).lower()
+    if category == "series":
+        return it_type == "Episode" or season_dir
+    if category == "movies":
+        return it_type == "Movie" or not season_dir
+    return True
+
+
 def scan(cfg, source: str = "emby", do_probe: bool = False, probe_limit: int = 0,
-         log=print) -> dict:
-    """返回 {generated_at, source, summary, items}；items 仅含缺中字条目，按 mtime 新→旧。"""
+         path: str = None, category: str = None, log=print) -> dict:
+    """返回 {generated_at, source, summary, items}；items 仅含缺中字条目，按 mtime 新→旧。
+
+    path: 只扫该目录（本地路径或 emby 路径前缀均可命中），如单扫地狱厨房；
+    category: 'series' 只扫剧集 / 'movies' 只扫电影（emby Type 或 Season 目录启发）。"""
     markers = cfg["detect"]["zh_markers"]
     items = []
     summary = {}
@@ -58,6 +82,9 @@ def scan(cfg, source: str = "emby", do_probe: bool = False, probe_limit: int = 0
                 if not local or not os.path.exists(local):
                     unresolved += 1
                     continue
+                if not _path_in(local, raw_path, path) or \
+                        not _category_ok(it.get("Type") or "", local, category):
+                    continue
                 if emby_mod.has_zh_streams(it) or paths.sibling_zh(local, markers):
                     continue
                 series = it.get("SeriesName") or _series_of(local)
@@ -81,7 +108,8 @@ def scan(cfg, source: str = "emby", do_probe: bool = False, probe_limit: int = 0
             summary[str(lib)] = {"total": total, "missing": missing, "unresolved": unresolved}
     else:
         exts = (".strm", ".mkv", ".mp4", ".ts", ".avi", ".rmvb", ".mov", ".wmv", ".m4v")
-        for root in cfg["paths"]["strm_roots"]:
+        roots = [path] if path else cfg["paths"]["strm_roots"]
+        for root in roots:
             total = missing = 0
             for dirpath, _dirs, files in os.walk(root):
                 for fn in files:
@@ -89,6 +117,8 @@ def scan(cfg, source: str = "emby", do_probe: bool = False, probe_limit: int = 0
                         continue
                     total += 1
                     local = os.path.join(dirpath, fn)
+                    if not _category_ok("Video", local, category):
+                        continue
                     if paths.sibling_zh(local, markers):
                         continue
                     if _excluded(cfg, _series_of(local)):
