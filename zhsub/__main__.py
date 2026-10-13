@@ -48,7 +48,8 @@ def cmd_run(cfg, args):
     if not result:
         raise SystemExit("没有候选清单：先跑 `zhsub scan`，或用 --from 指定清单文件")
     items = [it for it in result.get("items", []) if it.get("kind") in
-             ("chi_text", "foreign_text", "unprobed", "probe_failed", None)]
+             ("chi_text", "foreign_text", "unprobed", "probe_failed", None)
+             and not it.get("excluded")]
     if args.limit:
         items = items[:args.limit]
     pipe = Pipeline(cfg, log=print)

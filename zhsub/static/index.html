@@ -48,6 +48,7 @@ textarea{min-height:44vh;font-family:ui-monospace,Consolas,monospace;font-size:1
   <nav>
     <button data-t="status" class="on">状态</button>
     <button data-t="gloss">词表库</button>
+    <button data-t="items" onclick="loadItems()">清单</button>
     <button data-t="tasks">任务</button>
     <button data-t="cfg">设置</button>
     <select id="themeSel" title="皮肤">
@@ -82,6 +83,17 @@ textarea{min-height:44vh;font-family:ui-monospace,Consolas,monospace;font-size:1
     <textarea id="gText" spellcheck="false"></textarea>
     <div class="row"><button class="act" onclick="saveGloss()">保存</button><button class="ghost" onclick="closeGloss()">关闭</button>
     <button class="ghost" style="margin-left:auto;color:var(--err)" onclick="delGloss()">删除</button></div></div>
+</section>
+
+<section id="t-items" class="hidden">
+  <div class="card"><h2>翻译清单 · 勾选=排除（已有中字幕的默认勾选并注明，可手动取消勾选重新翻译）</h2>
+    <div class="row">
+      <span class="muted" id="itemsMeta">未加载</span>
+      <button class="ghost" onclick="toggleAllItems(true)">全选排除</button>
+      <button class="ghost" onclick="toggleAllItems(false)">全部恢复</button>
+      <button class="act" style="margin-left:auto" onclick="saveItems()">保存排除</button>
+    </div>
+    <div style="max-height:62vh;overflow:auto"><table id="itemsTable"><thead><tr><th>排除</th><th>剧集</th><th>条目</th><th>分类</th><th>备注</th></tr></thead><tbody></tbody></table></div></div>
 </section>
 
 <section id="t-tasks" class="hidden">
@@ -152,6 +164,15 @@ $('#scanTable').innerHTML='<table><tr><th>库</th><th>总数</th><th>缺中字</
 }catch(e){$('#scaninfo').textContent='加载失败: '+e;}}
 async function doScan(){const lim=+$('#probeLimit').value||0;const r=await j('/api/scan',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({source:'emby',probe:true,probe_limit:lim})});watch(r.job,'扫描');switchTab('tasks');}
 async function doRun(){const lim=+$('#runLimit').value||3;const r=await j('/api/run',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({limit:lim})});watch(r.job,'处理');switchTab('tasks');}
+// ---------- 翻译清单（排除勾选） ----------
+const esc=s=>String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+let ITEMS=[];
+async function loadItems(){try{const r=await j('/api/scan/items');ITEMS=r.items||[];window._scanAt=r.generated_at||'';}catch(e){ITEMS=[];}renderItems();}
+function renderItems(){const tb=document.querySelector('#itemsTable tbody');if(!ITEMS.length){tb.innerHTML='<tr><td colspan="5" class="muted">无清单：先在「状态」页扫描（可带范围）</td></tr>';$('#itemsMeta').textContent='';return;}
+const todo=ITEMS.filter(x=>!x.excluded).length;$('#itemsMeta').textContent=`共${ITEMS.length} · 待翻${todo} · 已排除${ITEMS.length-todo}`+(window._scanAt?` · 清单时间 ${String(window._scanAt).slice(0,16)}`:'');
+tb.innerHTML=ITEMS.map((x,i)=>`<tr><td><input type="checkbox" ${x.excluded?'checked':''} onchange="ITEMS[${i}].excluded=this.checked;if(this.checked&&!ITEMS[${i}].exclude_reason)ITEMS[${i}].exclude_reason='手动排除';if(!this.checked)ITEMS[${i}].exclude_reason='';renderItems()"></td><td>${esc(x.series||'')}</td><td>${esc(String(x.name||'').slice(0,70))}</td><td class="muted">${esc(x.kind||'')}</td><td class="muted">${esc(x.excluded?(x.exclude_reason||'手动排除'):'')}</td></tr>`).join('');}
+function toggleAllItems(v){ITEMS.forEach(x=>{x.excluded=v;x.exclude_reason=v?(x.exclude_reason||'手动排除'):'';});renderItems();}
+async function saveItems(){const updates=ITEMS.map(x=>({local_path:x.local_path,excluded:!!x.excluded}));const r=await j('/api/scan/items',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({updates})});$('#itemsMeta').textContent=`已保存：本次改动 ${r.changed} 条 / 共 ${r.total} 条（worker 下一轮生效）`;}
 async function doResearch(){const s=$('#gSeries').value.trim();if(!s)return alert('先填系列名');const t=+$('#gTmdb').value||null;
 const r=await j('/api/research',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({series:s,tmdb_id:t,force:true})});watch(r.job,'research');switchTab('tasks');}
 let jobs={};

@@ -207,7 +207,7 @@ class Worker:
                 continue
             result = self._candidates(source)
             pending = [it for it in result.get("items", [])
-                       if it.get("kind") in WORKABLE_KINDS]
+                       if it.get("kind") in WORKABLE_KINDS and not it.get("excluded")]
             if not pending:
                 if once:
                     return

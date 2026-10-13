@@ -52,6 +52,58 @@ def _category_ok(it_type: str, local: str, category: str) -> bool:
     return True
 
 
+_MEDIA_EXTS = ('.mkv', '.mp4', '.ts', '.avi', '.rmvb', '.mov', '.wmv', '.m4v', '.strm')
+_SUB_SUFFIXES = ('.zh.ai', '.chs', '.cht', '.zh', '.chi', '.zho', '.cn')
+
+
+def _bare_stem(fn: str) -> str:
+    """字幕/媒体文件名 → 裸条目stem（剥 .srt / .zh.ai 等字幕后缀 / 媒体扩展名），
+    使 'xxx.mkv.zh.ai.srt' 与 'xxx.mkv' / 'xxx.strm' 归一到 'xxx'。"""
+    stem = os.path.splitext(fn)[0]
+    while True:
+        low = stem.lower()
+        for suf in _SUB_SUFFIXES + _MEDIA_EXTS:
+            if low.endswith(suf):
+                stem = stem[:-len(suf)]
+                break
+        else:
+            return stem
+
+
+def build_zh_side_index(cfg) -> dict:
+    """一次走查 strm_roots 建 {裸stem: 字幕文件名} 索引——云侧媒体的字幕实际交付在
+    strm 树（本栈布局），按 stem（含剧集号，唯一性足够）对射检测已有中字幕。"""
+    idx = {}
+    marks = tuple(m.lower() for m in cfg["detect"]["zh_markers"])
+    for root in cfg["paths"]["strm_roots"]:
+        if not root or not os.path.isdir(root):
+            continue
+        for _dp, _dn, fns in os.walk(root):
+            for fn in fns:
+                low = fn.lower()
+                if low.endswith(('.srt', '.ass')) and any(m in low for m in marks):
+                    idx.setdefault(_bare_stem(fn), fn)
+    return idx
+
+
+def existing_zh_sub(local_path: str, cfg, side_index: dict) -> str:
+    """已有中文字幕检测（双路）：①同目录伴生（含 xxx.mkv.zh.ai.srt 双后缀形态）
+    ②strm 侧索引。返回字幕文件名/描述，空串=没有。"""
+    marks = tuple(m.lower() for m in cfg["detect"]["zh_markers"])
+    sdir, fn = os.path.split(local_path)
+    bare = _bare_stem(fn)
+    try:
+        sibs = os.listdir(sdir)
+    except OSError:
+        sibs = []
+    for f in sibs:
+        low = f.lower()
+        if low.endswith(('.srt', '.ass')) and any(m in low for m in marks) and \
+                _bare_stem(f) == bare:
+            return f
+    return side_index.get(bare) or ''
+
+
 def scan(cfg, source: str = "emby", do_probe: bool = False, probe_limit: int = 0,
          path: str = None, category: str = None, library: str = None, log=print) -> dict:
     """返回 {generated_at, source, summary, items}；items 仅含缺中字条目，按 mtime 新→旧。
@@ -66,11 +118,12 @@ def scan(cfg, source: str = "emby", do_probe: bool = False, probe_limit: int = 0
     if source == "emby":
         emb = emby_mod.Emby(cfg["emby"]["base_url"], cfg["emby"]["api_key"],
                             timeout=cfg["emby"].get("timeout", 30))
+        side_index = None
         for lib in cfg["emby"]["libraries"]:
             if library and lib != library:
                 continue
             lib_id = emb.resolve_library_id(lib)
-            total = missing = unresolved = 0
+            total = missing = unresolved = excluded_n = 0
             series_ids = set()
             raw_items = []
             for it in emb.walk(lib_id, cfg["emby"].get("item_types") or ["Episode", "Movie"]):
@@ -88,12 +141,20 @@ def scan(cfg, source: str = "emby", do_probe: bool = False, probe_limit: int = 0
                 if not _path_in(local, raw_path, path) or \
                         not _category_ok(it.get("Type") or "", local, category):
                     continue
-                if emby_mod.has_zh_streams(it) or paths.sibling_zh(local, markers):
-                    continue
+                # ⭐1013用户令: 已有中字幕不再静默丢弃 → 默认排除+备注(WebUI可勾回重译)
+                if emby_mod.has_zh_streams(it):
+                    zh_hit = "内嵌中文字幕轨"
+                else:
+                    if side_index is None:
+                        side_index = build_zh_side_index(cfg)
+                    zh_hit = existing_zh_sub(local, cfg, side_index)
                 series = it.get("SeriesName") or _series_of(local)
                 if _excluded(cfg, series):
                     continue
-                missing += 1
+                if zh_hit:
+                    excluded_n += 1
+                else:
+                    missing += 1
                 tmdb = tmdb_map.get(str(it.get("SeriesId") or "")) or \
                     _int_tmdb((it.get("ProviderIds") or {}).get("Tmdb"))
                 # Emby 已扫出流信息 → 现场分类；没扫过（None）→ 留给 ffprobe 兜底
@@ -107,13 +168,17 @@ def scan(cfg, source: str = "emby", do_probe: bool = False, probe_limit: int = 0
                     "emby_path": raw_path,
                     "local_path": local,
                     "kind": probe.classify(tracks) if tracks is not None else None,
+                    "excluded": bool(zh_hit),
+                    "exclude_reason": f"已有中字幕: {zh_hit}" if zh_hit else "",
                 })
-            summary[str(lib)] = {"total": total, "missing": missing, "unresolved": unresolved}
+            summary[str(lib)] = {"total": total, "missing": missing,
+                                 "unresolved": unresolved, "excluded": excluded_n}
     else:
         exts = (".strm", ".mkv", ".mp4", ".ts", ".avi", ".rmvb", ".mov", ".wmv", ".m4v")
         roots = [path] if path else cfg["paths"]["strm_roots"]
+        side_index = build_zh_side_index(cfg)
         for root in roots:
-            total = missing = 0
+            total = missing = excluded_n = 0
             for dirpath, _dirs, files in os.walk(root):
                 for fn in files:
                     if not fn.lower().endswith(exts):
@@ -122,11 +187,13 @@ def scan(cfg, source: str = "emby", do_probe: bool = False, probe_limit: int = 0
                     local = os.path.join(dirpath, fn)
                     if not _category_ok("Video", local, category):
                         continue
-                    if paths.sibling_zh(local, markers):
-                        continue
+                    zh_hit = existing_zh_sub(local, cfg, side_index)
                     if _excluded(cfg, _series_of(local)):
                         continue
-                    missing += 1
+                    if zh_hit:
+                        excluded_n += 1
+                    else:
+                        missing += 1
                     items.append({
                         "item_id": None,
                         "type": "Video",
@@ -134,8 +201,11 @@ def scan(cfg, source: str = "emby", do_probe: bool = False, probe_limit: int = 0
                         "series": _series_of(local),
                         "emby_path": None,
                         "local_path": local,
+                        "excluded": bool(zh_hit),
+                        "exclude_reason": f"已有中字幕: {zh_hit}" if zh_hit else "",
                     })
-            summary[str(root)] = {"total": total, "missing": missing, "unresolved": 0}
+            summary[str(root)] = {"total": total, "missing": missing,
+                                 "unresolved": 0, "excluded": excluded_n}
 
     _probe_pending(items, cfg, do_probe, probe_limit, log)
     items.sort(key=lambda x: x.get("mtime") or 0, reverse=True)
@@ -158,7 +228,7 @@ def _probe_pending(items, cfg, do_probe: bool, probe_limit: int, log=print):
             if it["kind"] is None:
                 it["kind"] = "unprobed"
         return
-    pending = [it for it in items if it["kind"] is None]
+    pending = [it for it in items if it["kind"] is None and not it.get("excluded")]
     limit = len(pending) if probe_limit <= 0 else min(probe_limit, len(pending))
     todo, rest = pending[:limit], pending[limit:]
     for it in rest:

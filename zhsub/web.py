@@ -140,6 +140,38 @@ def create_app(cfg: dict, cfg_path: str, start_worker: bool = True) -> FastAPI:
     class RunReq(BaseModel):
         limit: int = 5
 
+    # ---------- 翻译清单（排除勾选, 1013用户令） ----------
+    @app.get("/api/scan/items")
+    def scan_items():
+        r = scan_mod.load_latest(state["cfg"]["paths"]["data_dir"], None)
+        if not r:
+            return {"generated_at": None, "items": []}
+        return {"generated_at": r.get("generated_at"),
+                "items": r.get("items", [])}
+
+    class ItemsReq(BaseModel):
+        updates: list = []   # [{local_path, excluded}]
+
+    @app.post("/api/scan/items")
+    def scan_items_save(req: ItemsReq):
+        data_dir = state["cfg"]["paths"]["data_dir"]
+        r = scan_mod.load_latest(data_dir, None)
+        if not r:
+            raise HTTPException(404, "没有候选清单，先扫描")
+        by_path = {it.get("local_path"): it for it in r.get("items", [])}
+        changed = 0
+        for u in req.updates or []:
+            it = by_path.get(u.get("local_path"))
+            if it is None:
+                continue
+            ex = bool(u.get("excluded"))
+            if ex != bool(it.get("excluded")):
+                changed += 1
+            it["excluded"] = ex
+            it["exclude_reason"] = (it.get("exclude_reason") or "手动排除") if ex else ""
+        scan_mod.save(r, data_dir)
+        return {"changed": changed, "total": len(r.get("items", []))}
+
     @app.post("/api/run")
     def api_run(req: RunReq):
         def run(limit):
@@ -148,7 +180,8 @@ def create_app(cfg: dict, cfg_path: str, start_worker: bool = True) -> FastAPI:
             if not latest:
                 raise RuntimeError("没有候选清单，先扫描")
             items = [it for it in latest.get("items", []) if it.get("kind") in
-                     ("chi_text", "foreign_text", "unprobed", "probe_failed", None)][:limit]
+                     ("chi_text", "foreign_text", "unprobed", "probe_failed", None)
+                     and not it.get("excluded")][:limit]
             pipe = Pipeline(state["cfg"], log=log)
             done = fail = skip = 0
             for it in items:
